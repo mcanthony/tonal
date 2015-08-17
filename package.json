@@ -5,9 +5,10 @@
   "description": "Tonal library demos",
   "main": "index.html",
   "scripts": {
-    "demo": "watchify lib/cycle-of-fifths.js -o 'uglifyjs -cm > js/cycle-of-fifths.min.js'",
-    "cycle-of-fifths": "watchify lib/cycle-of-fifths.js -o 'js/cycle-of-fifths.min.js'",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "server": "http-server",
+    "update": "npm i ../tonal/lib",
+    "watch-fifths": "watchify lib/cycle-of-fifths.js -o 'uglifyjs -cm > js/cycle-of-fifths.min.js'",
+    "watch-scales": "watchify -t riotify lib/scales.js -o js/scales.js -v"
   },
   "repository": {
     "type": "git",
@@ -20,6 +21,11 @@
   },
   "homepage": "https://github.com/danigb/tonal#readme",
   "dependencies": {
-    "tonal": "file:../tonal/lib"
+    "riot": "^2.2.4",
+    "tonal": "file:../tonal/lib",
+    "tonal-tools": "file:../tonal"
+  },
+  "devDependencies": {
+    "riotify": "^0.1.2"
   }
 }
