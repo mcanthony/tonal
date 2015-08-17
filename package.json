@@ -1,0 +1,24 @@
+{
+  "name": "tonal-demos",
+  "private": "true",
+  "version": "1.0.0",
+  "description": "Tonal library demos",
+  "main": "index.html",
+  "scripts": {
+    "cycle-of-fifths": "watchify lib/cycle-of-fifths.js -o 'uglifyjs -cm > js/cycle-of-fifths.min.js'",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danigb/tonal.git"
+  },
+  "author": "danigb",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/danigb/tonal/issues"
+  },
+  "homepage": "https://github.com/danigb/tonal#readme",
+  "dependencies": {
+    "tonal": "file:../tonal/lib"
+  }
+}
