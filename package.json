@@ -5,7 +5,8 @@
   "description": "Tonal library demos",
   "main": "index.html",
   "scripts": {
-    "cycle-of-fifths": "watchify lib/cycle-of-fifths.js -o 'uglifyjs -cm > js/cycle-of-fifths.min.js'",
+    "demo": "watchify lib/cycle-of-fifths.js -o 'uglifyjs -cm > js/cycle-of-fifths.min.js'",
+    "cycle-of-fifths": "watchify lib/cycle-of-fifths.js -o 'js/cycle-of-fifths.min.js'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
