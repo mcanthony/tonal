@@ -7,7 +7,7 @@
   "scripts": {
     "server": "http-server",
     "update": "npm i ../tonal/lib",
-    "watch-fifths": "watchify lib/cycle-of-fifths.js -o 'uglifyjs -cm > js/cycle-of-fifths.min.js'",
+    "watch-fifths": "watchify lib/cycle-of-fifths.js -o js/cycle-of-fifths.js",
     "watch-scales": "watchify -t riotify lib/scales.js -o js/scales.js -v"
   },
   "repository": {

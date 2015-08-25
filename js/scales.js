@@ -6,30 +6,36 @@ riot.mount(scales)
 
 },{"./scales.tag":2,"./vexflow.tag":4,"riot":5}],2:[function(require,module,exports){
 var riot = require('riot');
-module.exports = riot.tag('scales', '<div> <h1>Scales demo { version }</h1> <select id="tonicSelect" onchange="{ tonicChanged }"> <option each="{ tonic in tonics }" value="{tonic}">{tonic}</option> </select> <select id="scaleType" onchange="{ scaleChanged }"> <option each="{ name in names }" value="{name}">{name}</option> </select> <h3>{tonic} {name}</h3> <h5>Notes: { notes.join(\' \') }</h5> <vexflow notes="{ notes }"></vexflow> </div>', function(opts) {
+module.exports = riot.tag('scales', '<div> <h1>Scales demo { version }</h1> <select id="tonicSelect" onchange="{ tonicChanged }"> <option each="{ tonic in tonics }" value="{tonic}">{tonic}</option> </select> <select id="scaleType" onchange="{ scaleChanged }"> <option each="{ name in names }" value="{name}" __selected="{ name === \'major\' }">{name}</option> </select> <h3>{tonic} {name}</h3> <h5>Notes: { notes.join(\' \') }</h5> <vexflow notes="{ notes }"></vexflow> </div>', function(opts) {
 
-  var riot = require('riot')
+  var reverse = require('tonal/list/reverse')
   var scale = require('tonal/scale/scale')
-  var names = require('tonal/scale/scale-names')
   this.tonics = 'C C# Db D D# Eb E F F# Gb G G# Ab A A# Bb B'.split(' ')
-  this.names = names()
-  this.name = this.names[0]
+  this.names = scale()
+  this.names.sort()
+  this.name = 'major'
   this.tonic = 'C'
-  this.notes = scale(this.tonic + ' ' + this.name )
+  this.notes = notes(this.tonic, this.name)
+
+  function notes(tonic, name) {
+    var s = scale(tonic + ' ' + name )
+    return s
+
+  }
 
   this.scaleChanged = function(e) {
     this.name = scaleType.value
-    this.notes = scale(this.tonic + ' ' + scaleType.value)
+    this.notes = notes(this.tonic, this.name)
   }.bind(this);
 
   this.tonicChanged = function(e) {
     this.tonic = tonicSelect.value
-    this.notes = scale(this.tonic + ' ' + scaleType.value)
+    this.notes = notes(this.tonic, this.name)
   }.bind(this);
 
 });
 
-},{"riot":5,"tonal/scale/scale":38,"tonal/scale/scale-names":37}],3:[function(require,module,exports){
+},{"riot":5,"tonal/list/reverse":17,"tonal/scale/scale":21}],3:[function(require,module,exports){
 var parse = require('tonal/note/parse')
 var VexFlow = Vex.Flow
 
@@ -44,7 +50,7 @@ module.exports = function (canvas, width, height, notes) {
 
   var tickables = notes.map(function (name) {
     var note = parse(name)
-    var staveNote = new VexFlow.StaveNote({ keys: [note.step + note.acc + '/' + note.oct], duration: 'q' })
+    var staveNote = new VexFlow.StaveNote({ keys: [note.letter + note.acc + '/' + note.oct], duration: 'q' })
     if (note.acc) {
       staveNote.addAccidental(0, new VexFlow.Accidental(note.acc))
     }
@@ -71,7 +77,7 @@ module.exports = function (canvas, width, height, notes) {
   voice.draw(ctx, stave)
 }
 
-},{"tonal/note/parse":32}],4:[function(require,module,exports){
+},{"tonal/note/parse":19}],4:[function(require,module,exports){
 var riot = require('riot');
 module.exports = riot.tag('vexflow', '<div> <canvas id="vex" width="800" height="100"></canvas> </div>', function(opts) {
     var vexflow = require('./vexflow.js')
@@ -1454,58 +1460,311 @@ riot.mountTo = riot.mount
 })(typeof window != 'undefined' ? window : void 0);
 
 },{}],6:[function(require,module,exports){
+var strict = require('../utils/strict')
+var parse = strict('Note not valid', require('../note/parse'))
+var interval = require('./interval')
+
+var STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+/**
+ * Get the interval between two notes
+ *
+ * This is the function to calculate distances (expressed in intervals) for
+ * two notes. An alias of this function is in `note/distance`
+ *
+ * This is an 'strict' function: if the notes are note valid, an
+ * exception is thrown.
+ *
+ * You can get a _curryfied_ version of this function by passing only one
+ * parameter. See examples below:
+ *
+ * @param {String} from - first note
+ * @param {String} to - second note
+ * @return {String} the interval between notes
+ *
+ * @example
+ * fromNotes('C', 'D') // => 'M2'
+ * ['C', 'D', 'Eb'].map(fromNotes('C')) // => ['P1', 'M2', 'm3']
+ */
+function fromNotes (from, to) {
+  if (arguments.length === 1) {
+    return function (to) {
+      return fromNotes(from, to)
+    }
+  }
+
+  from = parse(from)
+  to = parse(to)
+  var num = STEPS.indexOf(to.letter) - STEPS.indexOf(from.letter)
+  num = num < 0 ? num + 8 : num + 1
+  var alter = to.alter - from.alter
+  var oct = to.oct - from.oct
+  return interval(num, alter, oct).name
+}
+
+module.exports = fromNotes
+
+},{"../note/parse":19,"../utils/strict":25,"./interval":7}],7:[function(require,module,exports){
+var parse = require('./parse')
+
+var QUALITIES = {
+  P: {'-2': 'dd', '-1': 'd', 0: 'P', 1: 'A', 2: 'AA'},
+  M: {'-3': 'dd', '-2': 'd', '-1': 'm', 0: 'M', 1: 'A', 2: 'AA'}
+}
 
 /**
- * Given a data hash, return the keys
+ * Create a interval from its components
  *
- * @param {Hash} hash - the data hash
- * @return the hash keys as array
+ * @param {Integer} num - the interval number
+ * @param {Integer} alter - the interval alteration (0 is perfect or major)
+ * @param {Integer} oct - (Optional) the octaves, 0 by default
+ * @param {boolean} descending - (Optional) create a descending interval (false
+ * by default)
+ *
+ * @example
+ * interval(1) // => 'P1'
+ * interval(1, 1) // => 'A1'
+ * interval(1, 1, 2) // => 'A8'
+ * interval(1, 1, 2, -1) // => 'A-8'
+ * interval(2, -1, 2, -1) // => 'm-9'
  */
-function names (data) {
-  var keys = null
-  return function () {
-    if (!keys) keys = Object.keys(data)
-    return keys
+function interval (num, alter, oct, dir) {
+  if (isNaN(num)) {
+    var i = parse(num)
+    alter = isNaN(alter) ? i.alter : alter
+    oct = isNaN(oct) ? i.oct : oct
+    dir = isNaN(dir) ? i.dir : dir
+    q = QUALITIES[i.type][alter] || i.quality
+    return q ? parse(q + dir * (i.num + 7 * oct)) : null
+  } else {
+    if (num === 0) throw Error('0 is not a valid interval number.')
+    var simple = num > 8 ? (num % 7 || 7) : num
+    var type = (simple === 1 || simple === 4 || simple === 5 || simple === 8) ? 'P' : 'M'
+    alter = alter || 0
+    oct = oct || 0
+    dir = dir ? -1 : 1
+    var q = QUALITIES[type][alter]
+    return q ? parse(q + dir * (num + 7 * oct)) : null
   }
 }
 
-module.exports = names
+module.exports = interval
 
-},{}],7:[function(require,module,exports){
-var set = require('../set/set')
+},{"./parse":9}],8:[function(require,module,exports){
+var parse = require('./parse')
+/**
+ * Test if a string is a valid interval
+ *
+ * @param {String} interval - the interval to be tested
+ * @return {Boolean} true if its a valid interval
+ *
+ * @example
+ * isInterval('blah') // false
+ * isInterval('P5') // true
+ * isInterval('P6') // false
+ */
+function isInterval (interval) {
+  return parse(interval) !== null
+}
+
+module.exports = isInterval
+
+},{"./parse":9}],9:[function(require,module,exports){
+'use strict'
+
+var REGEX = /^(dd|d|m|M|P|A|AA)(-?)(\d+)$/
+// size in semitones to generic semitones in non altered state
+// last 0 is beacuse P8 is oct = 1
+var SEMITONES = [null, 0, 2, 4, 5, 7, 9, 11, 0]
+// alteration values
+var ALTERS = {
+  P: { dd: -2, d: -1, P: 0, A: 1, AA: 2 },
+  M: { dd: -3, d: -2, m: -1, M: 0, A: 1, AA: 2 }
+}
 
 /**
- * Create a set generator from a hash map data and a name parser
+ * Parse an interval and get its properties
  *
- * A set generator is a function that generates sets from strings. It uses
- * a parser to separate the tonic (if any) from the real name. Then look up
- * into the hash for a name and pass it to a set generator.
+ * Probably you will want to use `interval/interval` instead.
+ *
+ * This method retuns an object with the following properties:
+ * - name: the parsed interval
+ * - quality: the quality (one of `dmPMA` for dimished, minor, perfect, major and
+ * augmented respectively)
+ * - num: diatonic number (a positive integer bigger that 0)
+ * - alter: an integer with the alteration respect to 'P' or 'M' (depending on the type)
+ * - dir: direction, 1 for ascending intervals, -1 for descending ones
+ * - oct: the number of octaves (a positive integer)
+ * - type: the interval type. 'P' for 'perfect', 'M' for major. This is not the
+ * quality of the interval, just if it is perfectable or not.
+ * - semitones: the size of the interval in semitones
+ *
+ * @param {String} name - the name of the interval to be parsed
+ * @return {Array} a interval object or null if not a valid interval
+ *
+ * @name parse
+ * @module interval
+ * @see interval/interval
+ *
+ * @example
+ * var parse = require('tonal/interval/parse')
+ * parse('P-5') // => {quality: 'P', dir: -1, num: 5, generic: 4, alter: 0, perfectable: true }
+ * parse('m9') // => {quality: 'm', dir: 1, num: 9, generic: 1, alter: -1, perfectable: false }
+ */
+function parse (interval) {
+  var m = REGEX.exec(interval)
+  if (!m) return null // not valid interval
+
+  var num = +m[3]
+  if (num === 0) return null
+
+  var q = m[1]
+  var dir = m[2] === '' ? 1 : -1
+  var simple = num > 8 ? (num % 7 || 7) : num
+  var type = (simple === 1 || simple === 4 || simple === 5 || simple === 8) ? 'P' : 'M'
+  if (q === 'M' && type === 'P' || q === 'P' && type !== 'P') return null
+  var alt = ALTERS[type][q]
+  if (alt == null) return null
+  var oct = Math.floor((num - 1) / 7)
+  var semitones = dir * ((SEMITONES[simple] + alt) + 12 * oct)
+
+  return { name: m[0], quality: q, dir: dir, num: num, simple: simple,
+    perfectable: type === 'P', oct: oct, alter: alt,
+    semitones: semitones, type: type }
+}
+
+var memoize = require('../utils/fastMemoize')
+var coerce = require('../utils/coerceParam')
+module.exports = coerce('name', memoize(parse))
+
+},{"../utils/coerceParam":23,"../utils/fastMemoize":24}],10:[function(require,module,exports){
+var strict = require('../utils/strict')
+var parseNote = strict('Note not valid', require('../note/parse'))
+var toNote = require('../note/note')
+var parseInterval = strict('Interval not valid', require('./parse'))
+var isInterval = require('./isInterval')
+
+var LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+
+/**
+ * Transpose a note by an interval
+ *
+ * This is the principal function of interval module. You should be able to
+ * transpose any note with any interval. (if not, is a bug ;-)
+ *
+ * You can also get a currified version by passing one parameter instead
+ * of two. For example, with `transpose('M2')` you get a function that transposes
+ * any note by a 'M2' interval. The same way, with `transpose('C4')` you get
+ * a function that transposes C4 to the given interval. See examples below.
+ *
+ * This is an _strict_ function: if note or interval are not valid, an exception
+ * is thrown
+ *
+ * @param {String} interval - the interval to tranpose
+ * @param {String} note - the note to be transposed
+ * @return {String} the resulting note
+ *
+ * @example
+ * transpose('M2', 'E') // => 'F#4'
+ * transpose('M-2', 'C') // => 'Bb3'
+ * ['C', 'D', 'E'].map(transpose('M2')) // => ['D4', 'E4', 'F#4']
+ * ['M2', 'm3', 'P-8'].map(tranapose('C')) // => ['D4', 'Eb4', 'C3']
+ */
+function transpose (interval, note) {
+  // return a currified function if arguments == 0
+
+  // parse interval and notes in strict mode
+  var i = parseInterval(interval)
+  var n = parseNote(note)
+
+  var oct = n.oct + i.dir * i.oct
+
+  // if its a perfect octave, do a short path
+  if (i.quality === 'P' && (i.simple === 8 || i.simple === 1)) {
+    return n.pitchClass + oct
+  }
+
+  var letterIndex = LETTERS.indexOf(n.letter) + i.dir * (i.simple - 1)
+  if (letterIndex > 6) {
+    letterIndex = letterIndex % 7
+    oct++
+  } else if (letterIndex < 0) {
+    letterIndex += 7
+    oct--
+  }
+  var dest = toNote(LETTERS[letterIndex], 0, oct)
+  return toNote(dest, i.semitones - (dest.midi - n.midi), oct).name
+}
+
+module.exports = function (interval, note) {
+  if (arguments.length === 1) {
+    var param = arguments[0]
+    return function (other) {
+      if (isInterval(param)) return transpose(param, other)
+      else return transpose(other, param)
+    }
+  } else {
+    return transpose(interval, note)
+  }
+}
+
+},{"../note/note":18,"../note/parse":19,"../utils/strict":25,"./isInterval":8,"./parse":9}],11:[function(require,module,exports){
+var notes = require('../list/notes')
+var intervals = require('../list/intervals')
+
+/**
+ * Create a list dictionary from a hash map data and a name parser
+ *
+ * A list dictionary is a function that generates lists from keys. It uses
+ * a parser to remove the tonic (if present) from the key. Then look up
+ * into the hash for a name and pass it to a list generator.
+ *
+ * If the returned dictionary is called without arguments, a list of all keys
+ * is returned
  *
  * If the name is not found in the hash data, it throws an exception
+ *
+ * The parser should receive one string and return an object with two string
+ * properties:
+ * - tonic: a note if any, or null
+ * - type: (required) the key to lookfor
  *
  * The scale/scale and chord/chord functions uses this to create a generator.
  *
  * @param {Hash} data - the data hash (dictionary)
  * @param {Function} parser - a function that parses the name and returns
  * an object with tonic (if not present) and the name properties
+ * @return {Function} the list dictionary
  *
  * @example
- * var setGenerator = require('tonal/data/set-generator')
- * var scale = setGenerator({'major': 2773})
+ * var listDict = require('tonal/data/listDict')
+ * var scale = listDict({'major': 2773})
  * scale('C major') // => ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4']
  * scale('major') // => ['P1', 'M2', 'M3', 'P4', 'P5', 'M6', 'M7']
+ * // get keys:
+ * scale() // => ['major']
  */
-function setGenerator (data, parser) {
+function listDict (data, parser) {
   parser = parser || parseName
+  var keys = null
   return function (name) {
+    // if no aguments, returns keys
+    if (arguments.length === 0) {
+      keys = keys || Object.keys(data).sort()
+      return keys
+    }
+
+    // if its already a list, return it
+    if (Array.isArray(name)) return name
+
+    // parse the name
     var parsed = parser(name)
-    var setIdentifier = data[parsed.type]
-    if (!setIdentifier) throw Error('Name not found: ' + parsed.type)
-    return set(setIdentifier, parsed.tonic)
+    var listIdentifier = data[parsed.type]
+    if (!listIdentifier) throw Error('Name not found: ' + parsed.type)
+    return parsed.tonic ? notes(listIdentifier, parsed.tonic) : intervals(listIdentifier)
   }
 }
 
-module.exports = setGenerator
+module.exports = listDict
 
 var REGEX = /^([a-gA-G])?\s*(.*)$/
 function parseName (name) {
@@ -1513,563 +1772,262 @@ function parseName (name) {
   return m ? { tonic: m[1], type: m[2] } : m
 }
 
-},{"../set/set":46}],8:[function(require,module,exports){
-var parse = require('./parse')
+},{"../list/intervals":12,"../list/notes":15}],12:[function(require,module,exports){
+var distance = require('../interval/fromNotes')
+var toList = require('./list')
 
-/**
- * Get the interval direction (1 ascending, -1 descending)
- *
- * @param {String} interval - the interval
- * @return {Integer} the direction (1: ascending interval, -1: descending interval)
- *
- * @module interval
- * @example
- * direction('P5') // => 1
- * direction('P-4') // => -1
- */
-function direction (interval) {
-  return parse(interval).d
+function intervals (list) {
+  list = toList(list)
+  if (!list) return null
+  if (list[0] === 'P1' || list[0] === 'P-1') return list
+  return list.map(distance(list[0]))
 }
-module.exports = direction
 
-},{"./parse":18}],9:[function(require,module,exports){
-var pc = require('../note/pitch-class')
+module.exports = intervals
 
-/**
- * Get the distance in semitones between two notes
- *
- * @param {String} root - the root note
- * @param {String} destination - the destination note
- *
- * @module interval
- *
- * @example
- * distanceChromatic('C', 'G') // => 7
- * distanceChromatic('G', 'C') // => -7
- */
-function distanceChromatic (root, dest) {
-  return pc(dest) - pc(root)
-}
-module.exports = distanceChromatic
+},{"../interval/fromNotes":6,"./list":14}],13:[function(require,module,exports){
+'use strict'
 
-},{"../note/pitch-class":33}],10:[function(require,module,exports){
-var step = require('../note/step')
-
-var STEPS = {'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6}
+var BINARY = /^1[01]{11}$/
 
 /**
- * Get the generic interval distance between two notes
+ * Determine if a given number is a valid binary list number
  *
- * @module interval
+ * A valid binary list is a binary number with two conditions:
+ * - its 12 digit long
+ * - starts with 1 (P1 interval)
+ *
+ * The binary number can be expressed in decimal as well (i.e 2773)
+ *
+ * @param {String} number - the number to test
+ * @return {boolean} true if its a valid scale binary number
  *
  * @example
- * distanceGeneric('C', 'G') // => 4
- * distanceGeneric('G', 'C') // => -4
+ * isBinary('101010101010') // => true
+ * isBinary(2773) // => true
+ * isBinary('001010101010') // => false (missing first 1)
+ * isBinary('1001') // => false
  */
-function distanceGeneric (root, dest) {
-  return STEPS[step(dest)] - STEPS[step(root)]
-}
-module.exports = distanceGeneric
-
-},{"../note/step":34}],11:[function(require,module,exports){
-var distanceGeneric = require('./distance-generic')
-var distanceChromatic = require('./distance-chromatic')
-var genericToDiatonic = require('./generic-to-diatonic')
-
-/**
- * Get the interval between two notes
- *
- * @param {String} root - root or tonic note
- * @param {String} destination - the destination note
- * @return {String} an interval
- */
-function distanceInterval (root, dest) {
-  return genericToDiatonic(distanceGeneric(root, dest), distanceChromatic(root, dest))
+function isBinaryList (number) {
+  return BINARY.test(number.toString(2))
 }
 
-module.exports = distanceInterval
-
-},{"./distance-chromatic":9,"./distance-generic":10,"./generic-to-diatonic":12}],12:[function(require,module,exports){
-var type = require('./generic-type')
-
-var DIMISHED = { 1: -1, 2: 0, 3: 2, 4: 4, 5: 6, 6: 7, 7: 9, 8: 11 }
-
-/**
- * Given a generic interval and a number of semitones, return the interval
- * (if exists)
- */
-function genericToDiationic (generic, semitones) {
-  var qualities = type(generic) === 'perfect' ? ['d', 'P', 'A'] : ['d', 'm', 'M', 'A']
-  var dir = semitones < 0 ? '-' : ''
-  var num = generic + 1
-  var quality = qualities[semitones - DIMISHED[num]]
-  return quality ? quality + dir + num : null
-}
-module.exports = genericToDiationic
-
-},{"./generic-type":13}],13:[function(require,module,exports){
-/**
- * Return the type ('perfect' or 'major') of the [generic interval](https://en.wikipedia.org/wiki/Generic_interval)
- *
- * A generic interval its the number of a diatonic interval
- *
- * @param {Integer} number - the generic interval (positive integer)
- * @return {String} the type ('perfect' or 'major')
- *
- * @example
- * genericType(0) // 'perfect'  <- unison
- * genericType(3) // 'perfect'  <- fourth
- * genericType(4) // 'perfect'  <- fifth
- * genericType(7) // 'perfect'  <- octave
- * genericType(8) // 'major'    <- nineth
- */
-function genericType (generic) {
-  var n = Math.abs(generic) % 7
-  if (n === 0 || n === 3 || n === 4) return 'perfect'
-  else return 'major'
-}
-
-module.exports = genericType
+module.exports = isBinaryList
 
 },{}],14:[function(require,module,exports){
-var number = require('./number')
-var numberToGeneric = require('./number-to-generic')
-/**
- * Convert a [diatonic interval](https://en.wikipedia.org/wiki/Interval_(music))
- * into a [generic interval](https://en.wikipedia.org/wiki/Generic_interval)
- *
- * @param {String} interval - the diatonic interval
- * @return {Integer} the generic interval
- *
- * @see genericToDiatonic
- * @module interval
- *
- * @example
- * generic('M9') // => 1
- */
-function generic (interval) {
-  return numberToGeneric(number(interval))
-}
-
-module.exports = generic
-
-},{"./number":17,"./number-to-generic":16}],15:[function(require,module,exports){
-var INTERVAL = /^[AdmMP]-?\d+$/
-
-function isInterval (interval) {
-  return INTERVAL.test(interval)
-}
-
-module.exports = isInterval
-
-},{}],16:[function(require,module,exports){
-
-/**
- * Give a interval number, returns a [generic interval](https://en.wikipedia.org/wiki/Generic_interval)
- *
- * @param {Integer} number - the interval number
- * @return {Integer} the generic interval (an integer bewteen 0 and 6)
- */
-function numberToGeneric (num) {
-  if (num === 0) throw Error('0 is not a valid interval number')
-  var dir = num > 0 ? 1 : -1
-  return dir * (Math.abs(num) - 1) % 7
-}
-module.exports = numberToGeneric
-
-},{}],17:[function(require,module,exports){
 var parse = require('./parse')
-
 /**
- * Return the number (diatonic number or generic interval) of an interval
- */
-function number (interval) {
-  return parse(interval).n
-}
-module.exports = number
-
-},{"./parse":18}],18:[function(require,module,exports){
-var REGEX = /^([AdmMP])(-?)(\d+)$/
-
-/**
- * Get the interval components
+ * Get a list of notes or isInterval
  *
- * This method retuns an object with the following properties:
- * - q: the quality (one of `dmPMA` for dimished, minor, perfect, major and
- * augmented respectively)
- * - d: direction, 1 for ascending intervals, -1 for descending ones
- * - n: diatonic number (a positive integer bigger that 0)
+ * This is the principal function to create lists. Basically does the same as
+ * `list/parse` but if an array is given, it returns it without modification
+ * or validation (so, only pass an array when you are sure that is a valid list)
  *
- * @param {String} name - the name of the interval to be parsed
- * @return {Array} an array in the form [quality, direction, number]
+ * @param {String|Array} list - the list to be parsed or passed
+ * @return {Array} an array list of notes or intervals (or anything it you pass
+ * an array to the function)
  *
  * @example
- * var parse = require('tonal/interval/parse')
- * parse('P-5') // => {q: 'P', d: -1, n: 5}
- * parse('M9') // => {q: 'M', d: 1, n: 9}
+ * list('c d# e5') // => ['C4', 'D#4', 'E5']
+ * list('P1 m2') // => ['P1', 'm2']
+ * list('bb2') // => ['Bb2']
+ * list('101') // => ['P1', 'M2']
+ * // to validate an array
+ * list(['C#3', 'P2'].join(' ')) // => null
  */
-function parse (interval) {
-  var m = REGEX.exec(interval)
-  if (!m) throw Error('Not an interval: ' + interval)
-  return { q: m[1], d: m[2] === '' ? 1 : -1, n: +m[3] }
+function list (l) {
+  if (Array.isArray(l)) return l
+  else return parse(l)
+}
+
+module.exports = list
+
+},{"./parse":16}],15:[function(require,module,exports){
+var transpose = require('../interval/transpose')
+var intervals = require('./intervals')
+var toList = require('./list')
+
+function notes (list, tonic) {
+  list = toList(list)
+  if (!list) return null
+
+  if (list[0] === 'P1' || list[0] === 'P-1') {
+    return list.map(transpose(tonic))
+  } else {
+    if (!tonic) return list
+    return intervals(list).map(transpose(tonic))
+  }
+}
+
+module.exports = notes
+
+},{"../interval/transpose":10,"./intervals":12,"./list":14}],16:[function(require,module,exports){
+var isBinary = require('./isBinary')
+var toNote = require('../note/note')
+var isInterval = require('../interval/isInterval')
+
+/**
+ * Parse a string to a note or interval list
+ *
+ * The string can be notes or intervals separated by white spaces or a binary
+ * or decimal representation of a interval list
+ *
+ * @param {String|Integer} list - the string to be parsed
+ * @return {Array} an array of notes or intervals, null if not valid list
+ */
+function parse (list) {
+  if (isBinary(list)) return binaryIntervals(list.toString(2))
+  else if (typeof list === 'string') list = list.split(' ')
+  else return null
+
+  var notes = toNotes(list)
+  return notes ? notes : toIntervals(list)
 }
 
 module.exports = parse
 
-},{}],19:[function(require,module,exports){
-var simple = require('./simple')
-var direction = require('./direction')
-
-// size in semitones to cannonical (perfect or major) generic intervals
-var SIZES = { 1: 0, 2: 2, 3: 4, 5: 7, 6: 9, 7: 11, 8: 12 }
-var DIMISHED = { 1: -1, 2: 0, 3: 2, 4: 4, 5: 6, 6: 7, 7: 9, 8: 11 }
-var NAME_TO_DISTANCE = { 'd1': -1, 'P1': 0, 'A1': 1, 'd2': 0, 'm2': 1, 'M2': 2,
-  'A2': 3, 'd3': 2, 'm3': 3, 'M3': 4, 'A3': 5, 'd4': 4, 'P4': 5, 'A4': 6,
-  'd5': 6, 'P5': 7, 'A5': 8, 'd6': 7, 'm6': 8, 'M6': 9, 'A6': 10, 'd7': 9,
-  'm7': 10, 'M7': 11, 'A7': 12, 'd8': 11, 'P8': 12, 'A8': 13 }
-
-/**
- * Get the semitones distance of an intervals
- *
- * @param {String} interval - the interval
- * @return {Integer} the number of semitones
- *
- * @module interval
- * @example
- * semitones('P5') // => 7
- */
-function semitones (interval) {
-  return direction(interval) * NAME_TO_DISTANCE[simple(interval, true)]
+var CHROMA = ['P1', 'm2', 'M2', 'm3', 'M3', 'P4', 'A4', 'P5', 'm6', 'M6', 'm7', 'M7']
+function binaryIntervals (binary) {
+  var result = []
+  for (var i = 0, len = binary.length; i < len; i++) {
+    if (binary[i] === '1') result.push(CHROMA[i])
+  }
+  return result
 }
-module.exports = semitones
 
-},{"./direction":8,"./simple":20}],20:[function(require,module,exports){
-var parse = require('./parse')
-var numberToGeneric = require('./number-to-generic')
+function toNotes (list) {
+  var note
+  for (var i = 0, len = list.length; i < len; i++) {
+    note = toNote(list[i])
+    if (note === null) return null
+    else list[i] = note.name
+  }
+  return list
+}
 
+function toIntervals (list) {
+  if (list[0] !== 'P1' && list[0] !== 'P-1') return null
+  for (var i = 1, len = list.length; i < len; i++) {
+    if (!isInterval(list[i])) return null
+  }
+  return list
+}
+
+},{"../interval/isInterval":8,"../note/note":18,"./isBinary":13}],17:[function(require,module,exports){
+'use strict'
+
+var list = require('./list')
 /**
- * Simplify an interval
+ * Get the reverse (retrograde) of a list
  *
- * @param {String} interval - the interval to be simplified
- * @param {boolean} ascending - (optional) if true, the simplified interval will
- * be always ascending
- *
- * @module interval
+ * @param {String|Array|Integer} list - the list to be reversed
+ * @return {Array} The reversed list
  *
  * @example
- * simple('M9') // => 'M2'
- * simple('M-9') // => 'M-2'
- * simple('M-9', true) // => 'M2'
+ * reverse('A B C') // => ['C', 'B', 'A']
  */
-function simple (interval, ascending) {
-  var i = parse(interval)
-  var num = i.n === 8 ? 8 : numberToGeneric(i.n) + 1
-  var dir = (ascending || i.d === 1) ? '' : '-'
-  return i.q + dir + num
+function reverse (forward) {
+  if (Array.isArray(forward)) return forward.concat().reverse()
+  else return list(forward).reverse()
 }
 
-module.exports = simple
+module.exports = reverse
 
-},{"./number-to-generic":16,"./parse":18}],21:[function(require,module,exports){
-
-var midi = require('../note/midi')
-var fromMidi = require('../note/from-midi')
-
-function transposeChromatic (semitones, note) {
-  return fromMidi(midi(note) + semitones)
-}
-module.exports = transposeChromatic
-
-},{"../note/from-midi":28,"../note/midi":30}],22:[function(require,module,exports){
-var step = require('../note/step')
-var CLASSES = 'CDEFGABCDEFGAB'
-
-/**
- * Transpose note a generic interval
- *
- * A generic interval is defined is the number part of a diationc interval
- * (2: ascendent second, 3: ascendent thirth, -4: descending fourth, ...)
- * The generic interval do not take account of diatonic spelling
- *
- * @param {Integer} generic - the generic interval
- * @param {String} note - the note (everything but the step is ignored)
- * @return {String} the tranposed step (in uppercase)
- *
- * @example
- * transpose(0, 'C') // => 'C'
- * transpose(1, 'C') // => 'D'
- * transpose(-1, 'C') // => 'B'
- */
-function transposeGeneric (number, note) {
-  var index = CLASSES.indexOf(step(note))
-  var dest = index + (number % 7)
-  if (dest < 0) dest += 7
-  return CLASSES[dest]
-}
-module.exports = transposeGeneric
-
-},{"../note/step":34}],23:[function(require,module,exports){
-var transposeGeneric = require('./transpose-generic')
-var transposeChromatic = require('./transpose-chromatic')
-var generic = require('./generic')
-var semitones = require('./semitones')
-var enharmonic = require('../note/enharmonic')
-
-function transposeDiatonic (interval, note) {
-  var steps = transposeGeneric(generic(interval), note)
-  var chromatic = transposeChromatic(semitones(interval), note)
-  return enharmonic(chromatic, steps)
-}
-module.exports = transposeDiatonic
-
-},{"../note/enharmonic":27,"./generic":14,"./semitones":19,"./transpose-chromatic":21,"./transpose-generic":22}],24:[function(require,module,exports){
-/**
- * Given a number of accidentals returns the string representation
- *
- * @param {Integer} number - the number of accidentals (posivite for shaprs,
- * negative for flats, zero for an empty string)
- * @return {String} an accidentals string
- *
- * @example
- * var accidentals = require('tonal/misc/accidentals')
- * accidenals(2) // => '##'
- * accidenals(-2) // => 'bb'
- * accidenals(0) // => ''
- */
-function accidentals (value) {
-  value = +value
-  if (value > 0) return Array(value + 1).join('#')
-  else if (value < 0) return Array(Math.abs(value) + 1).join('b')
-  else return ''
-}
-
-module.exports = accidentals
-
-},{}],25:[function(require,module,exports){
-var accidentals = require('./accidentals')
-
-/**
- * TODO: write proper docs
- * @example
- * alteration('C#6') // 1
- * alteration('Db') // -1
- * alteration('E') // 0
- * alteration('#') // => 1
- * alteration('##') // => 2
- * alteration('b') // => -1
- * alteration('bb') // => -2
- * alteration('') // 0
- */
-function alteration (value) {
-  if (/^#+$/.test(value)) return value.length
-  else if (/^b*$/.test(value)) return -1 * value.length
-  else return alteration(accidentals(value))
-}
-module.exports = alteration
-
-},{"./accidentals":24}],26:[function(require,module,exports){
-var alter = require('../misc/alteration')
+},{"./list":14}],18:[function(require,module,exports){
 var parse = require('./parse')
 
+var ACCIDENTALS = { '-4': 'bbbb', '-3': 'bbb', '-2': 'bb', '-1': 'b',
+  0: '', 1: '#', 2: '##', 3: '###', 4: '####'}
+
 /**
- * Return the alteration number of the note
+ * Create a note from its components (letter, octave, alteration)
  *
- * @param {String} note - the note
- * @return {Integer} the alteration number
+ * It returns the cannonical representation of a note (ie. 'C##2', 'Db3')
+ * In tonal it means a string with:
+ * - letter (in upper case)
+ * - accidentals (with '#' or 'b', never 'x')
+ * - a octave number (a positive decimal, always present)
  *
- * @see misc/alteration
+ * @param {String} note or step - a string with a note or a note letter
+ * @param {Integer} alteration - (Optional) the alteration number. If not set
+ * uses the alterations from the note (if present) or 0
+ * @param {Integer} octave - (Optional) the note octave. If note set uses the
+ * octave from the note (if present) or 4
+ * @return {Object} an object with the note properties (@see note/parse)
+ *
  * @module note
  *
  * @example
- * alteration('C#6') // 1
- * alteration('Db') // -1
- * alteration('E') // 0
- * alteration('bb') // => -1 (first char is the step)
+ * note('D', -2, 3) // => 'Dbb3'
+ * note('G', 2, 1) // => 'G##1'
+ * note('C', 1) // => 'C#4'
+ * note('C##', -1) // => 'Cb4'
+ * note('Cx') // => 'C##4'
+ * note('Cx', null, 2) // => 'C##2'
  */
-function alteration (note) {
-  return alter(parse(note).acc)
-}
-module.exports = alteration
+function note (note, acc, oct) {
+  note = parse(note)
+  if (!note) return null
 
-},{"../misc/alteration":25,"./parse":32}],27:[function(require,module,exports){
-var pc = require('./pitch-class')
-var octave = require('./octave')
-var accidentals = require('../misc/accidentals')
-
-/**
- * Get the enharmonic of a note with a given step
- *
- * @example
- * enharmonic('C#4', 'D') // => 'Db4'
- * enharmonic('B#', 'C') // => 'C'
- */
-function enharmonic (note, step) {
-  var oct = octave(note)
-  var dist = pc(note) - pc(step)
-  if (dist > 6) {
-    dist = dist - 12
-    oct++
-  } else if (dist < -6) {
-    dist = dist + 12
-    oct--
-  }
-  return step + accidentals(dist) + oct
+  acc = acc ? ACCIDENTALS[acc] : note.acc
+  if (acc === null) return null
+  oct = oct ? oct : note.oct
+  return parse(note.letter + acc + oct)
 }
 
-module.exports = enharmonic
+module.exports = note
 
-},{"../misc/accidentals":24,"./octave":31,"./pitch-class":33}],28:[function(require,module,exports){
-'use strict'
-
-var CHROMATIC = [ 'C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B' ]
-
-/**
- * Get the note of the given midi number
- *
- * This method doesn't take into account diatonic spelling. Always the same
- * pitch class is given to the same midi number. @see enahrmonic
- *
- * @param {Integer} midi - the midi number
- * @return {String} the note or null if there's no pitchClass available to this note name
- *
- */
-function fromMidi (midi) {
-  var name = CHROMATIC[midi % 12]
-  var oct = Math.floor(midi / 12) - 1
-  return name + oct
-}
-
-module.exports = fromMidi
-
-},{}],29:[function(require,module,exports){
-var NOTE = /^([a-gA-G])(#{0,2}|b{0,2})(-?[0-9]{0,1})$/
-
-/**
- * Determine if the given string is a valid note
- *
- * @param {String} string - the string to be tested
- * @return {Boolean} true if is a valid note
- */
-function isNote (string) {
-  return NOTE.test(string)
-}
-
-module.exports = isNote
-
-},{}],30:[function(require,module,exports){
-var pitchClass = require('./pitch-class')
-var octave = require('./octave')
-
-/**
- * Get the midi number of the given note
- *
- * @param {String} note - the note
- * @return {Integer} - the midi number
- *
- * @example
- * var midi = require('tonal/note/midi')
- * midi('A4') // => 69
- */
-function midi (note) {
-  return pitchClass(note) + 12 * (octave(note) + 1)
-}
-
-module.exports = midi
-
-},{"./octave":31,"./pitch-class":33}],31:[function(require,module,exports){
-
-var parse = require('./parse')
-
-function octave (note) {
-  return parse(note).oct
-}
-module.exports = octave
-
-},{"./parse":32}],32:[function(require,module,exports){
-
-var STEP = '([a-gA-G])'
-var ACC = '(#{1,4}|b{1,4}|x{1,2}|)'
-var OCT = '(-?[0-9]{0,1})'
-var NOTE = new RegExp('^' + STEP + ACC + OCT + '$')
-var NAME_PREFIX = new RegExp('^' + STEP + ACC + '()')
-
-/**
- * Get the components of a note (step, accidentals and octave)
- *
- * It returns an object with the following properties:
- * - step: the step letter __always__ in uppercase
- * - acc: a string with the accidentals or '' if no accidentals (never null)
- * - oct: a integer with the octave. If not present in the note, is set to 4
- *
- * @param {String} note - the note (pitch) to be parsed
- * @param {boolean} namePrefix - if name prefix is true, then a note name
- * (without octave) is extracted from the beggining of the string
- * @return an object with the note components
- */
-function parse (note, namePrefix) {
-  var m = (namePrefix ? NAME_PREFIX : NOTE).exec(note)
-  if (!m) throw Error('Invalid note: ' + note)
-  return { note: m[0], step: m[1].toUpperCase(),
-    acc: m[2].replace(/x/g, '##'), oct: m[3] ? +m[3] : 4 }
-}
-
-module.exports = parse
-
-},{}],33:[function(require,module,exports){
-
-var step = require('./step')
-var alteration = require('./alteration')
-
+},{"./parse":19}],19:[function(require,module,exports){
+var REGEX = /^([a-gA-G])(#{1,4}|b{1,4}|x{1,2}|)(\d*)$/
 var SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
 
 /**
- * Get the [pitch class](https://en.wikipedia.org/wiki/Pitch_class#Integer_notation)
- * of the note
+ * Parse a note and return its properties
  *
- * The pitch class is an integer value of the pitch where C=0, C#=1, D=2...B=11
+ * Probably you want to use `note/note` instead.
+ *
+ * It returns an object with the following properties:
+ *
+ * - __name__: {String} the parsed note string
+ * - __letter__: the note letter __always__ in uppercase
+ * - __pitchClass__: the note [pitch class](https://en.wikipedia.org/wiki/Pitch_class)
+ * (letter in uppercase, accidentals using 'b' or '#', never 'x', no octave)
+ * - __acc__: a string with the accidentals or '' if no accidentals (never null)
+ * - __oct__: a integer with the octave. If not present in the note, is set to 4
+ * - __alter__: the integer representic the accidentals (0 for no accidentals,
+ * - __midi__: {Integer} the midi value
+ * -1 for 'b', -2 for 'bb', 1 for '#', 2 for '##', etc...)
+ * - __chroma__: {Integer} the pitch class interger value (between 0 and 11)
+ * where C=0, C#=1, D=2...B=11
+ *
+ * @param {String} note - the note (pitch) to be p
+ * @return an object with the note components or null if its not a valid note
+ *
+ * @see note/note
  *
  * @example
- * pitchClass('C2') // => 0
- * pitchClass('C3') // => 0
- * pitchClass('C#') // => 1
- * pitchClass('Db') // => 1
+ * parse('C#2') // => { }
  */
-function pitchClass (note) {
-  return SEMITONES[step(note)] + alteration(note)
+function parse (note) {
+  var m = REGEX.exec(note)
+  if (!m) return null
+
+  var n = { name: m[0] }
+  n.letter = m[1].toUpperCase()
+  n.acc = m[2].replace(/x/g, '##')
+  n.pitchClass = n.letter + n.acc
+  n.oct = m[3] === '' ? 4 : +m[3]
+  n.alter = n.acc[0] === 'b' ? -n.acc.length : n.acc.length
+  n.chroma = SEMITONES[n.letter] + n.alter
+  n.midi = n.chroma + 12 * (n.oct + 1)
+  return n
 }
-module.exports = pitchClass
 
-},{"./alteration":26,"./step":34}],34:[function(require,module,exports){
+var memoize = require('../utils/fastMemoize')
+var coerce = require('../utils/coerceParam')
+module.exports = coerce('name', memoize(parse))
 
-var parse = require('./parse')
-
-/**
- * Get the step of a note (the letter in uppercase, ignoring the accidentals and octave)
- *
- * @param {String} note - the note to get the step of
- * @return {String} the step letter (__always in uppercase__)
- *
- * @example
- * step('C#4') // => 'C'
- * step('db7') // => 'D'
- */
-function step (note) {
-  return parse(note).step
-}
-module.exports = step
-
-},{"./parse":32}],35:[function(require,module,exports){
-
-/**
- * Transpose a note by an (diatonic) interval
- *
- * @see interval/transpose-diationic
- * @example
- * transpose('P5', 'D') // => 'A4'
- */
-module.exports = require('../interval/transpose-interval')
-
-},{"../interval/transpose-interval":23}],36:[function(require,module,exports){
+},{"../utils/coerceParam":23,"../utils/fastMemoize":24}],20:[function(require,module,exports){
 var parseNote = require('../note/parse')
 
 /**
@@ -2091,7 +2049,7 @@ function parse (scale) {
   var space = type.indexOf(' ')
   if (space > 0) {
     try {
-      note = parseNote(scale.slice(0, space)).note
+      note = parseNote(scale.slice(0, space)).name
       type = type.substring(note.length).trim()
     } catch (e) {}
   }
@@ -2100,36 +2058,28 @@ function parse (scale) {
 
 module.exports = parse
 
-},{"../note/parse":32}],37:[function(require,module,exports){
+},{"../note/parse":19}],21:[function(require,module,exports){
 var data = require('./scales-all.json')
-var names = require('../data/names')
-/**
- * Get all scale names
- */
-module.exports = names(data)
-
-},{"../data/names":6,"./scales-all.json":39}],38:[function(require,module,exports){
-var data = require('./scales-all.json')
-var generator = require('../data/set-generator')
+var dictionary = require('../list/dictionary')
 var parse = require('./parse')
 
 /**
- * A scale set generator
+ * A scale dictionary
  *
- * Given a scale name returns the intervals or notes
+ * Given a scale name, returns the intervals or notes
  *
  * @param {String} name - a scale name (with or without tonic)
- * @return {Array} a set (of notes or intervals depending on the name)
+ * @return {Array} a list (of notes or intervals depending on the name)
  *
- * @see set/generator
+ * @see list/dictionary
  *
  * @example
  * scale('major') // => []
  * scale('C major') // => []
  */
-module.exports = generator(data, parse)
+module.exports = dictionary(data, parse)
 
-},{"../data/set-generator":7,"./parse":36,"./scales-all.json":39}],39:[function(require,module,exports){
+},{"../list/dictionary":11,"./parse":20,"./scales-all.json":22}],22:[function(require,module,exports){
 module.exports={
   "lydian": "P1 M2 M3 A4 P5 M6 M7",
   "major": "P1 M2 M3 P4 P5 M6 M7",
@@ -2241,194 +2191,66 @@ module.exports={
   "phrygian major": "P1 m2 M3 P4 P5 m6 m7"
 }
 
-},{}],40:[function(require,module,exports){
-var parse = require('../interval/parse')
-var set = ['P1', 'm2', 'M2', 'm3', 'M3', 'P4', 'd5', 'P5', 'm6', 'M6', 'm7', 'M7']
-
+},{}],23:[function(require,module,exports){
 /**
- * Returns a set of intervals that represents an harmonic chromatic scale
+ * Internal function: ensures the param is a string
  *
- * The harmonic chromatic scale is the same whether rising or falling and
- * includes all the notes in the major, harmonic minor or melodic minor
- * scales plus flattened second and sharpened fourth degrees
+ * It allows parse to be called on itself:
+ * `parse(parse(parse('C3')))`
+ *
+ * @api private
  */
-function chromaticIntervalSet (length) {
-  if (length > set.length) set = upToOctave(set, length % 12)
-  return set.slice(0, length)
-}
-
-module.exports = chromaticIntervalSet
-
-function upToOctave (source, octave) {
-  var interval, num
-  var result = source.slice(0, 12)
-  for (var oct = 1; oct <= octave; oct++) {
-    num = oct * 8 - 1
-    for (var i = 0; i < 12; i++) {
-      interval = parse(source[i])
-      result.push(interval.q + (interval.n + num))
-    }
+function coerce (name, func) {
+  return function (param) {
+    if (!param) return null
+    else if (param[name]) return func(param[name])
+    else if (typeof param === 'string') return func(param)
+    else throw Error('The ' + name + ' must be a string: ' + param)
   }
-  return result
 }
 
-},{"../interval/parse":18}],41:[function(require,module,exports){
-var isBinary = require('./is-binary-set')
-var isIntervals = require('./is-interval-set')
-var isNotes = require('./is-note-set')
-var distance = require('../interval/distance-interval')
-var chromatic = require('./chromatic-interval-set')
+module.exports = coerce
 
+},{}],24:[function(require,module,exports){
 /**
- * Given a set identifier return the intervals
+ * Simplest and fastest memoize function I can imagine
  *
- * @param {String|Decimal|Array} set - the set to get the intervals from
- * @return {Array} an array of intervals
+ * This is in base of two restrictive asumptions:
+ * - the function only receives __one paramater__
+ * - the parameter __is a string__
+ *
+ * For a more complete memoize solution see:
+ * https://github.com/addyosmani/memoize.js
+ *
+ * @api private
+ * @param {Function} func - the function to memoize
+ * @return {Function} A memoized function
  */
-function intervalSet (set) {
-  if (isBinary(set)) {
-    return binaryIntervals(set.toString(2))
-  }
-
-  if (typeof (set) === 'string') set = set.split(' ')
-  if (isIntervals(set)) {
-    return set
-  } else if (isNotes(set)) {
-    var root = set[0]
-    return set.map(function (note) {
-      return distance(root, note)
-    })
+function memoize (func) {
+  var cache = {}
+  return function (str) {
+    return (str in cache) ? cache[str] : cache[str] = func(str)
   }
 }
+module.exports = memoize
 
-module.exports = intervalSet
-
-function binaryIntervals (binary) {
-  var chroma = chromatic(binary.length)
-  var result = []
-  for (var i = 0, len = binary.length; i < len; i++) {
-    if (binary[i] === '1') result.push(chroma[i])
-  }
-  return result
-}
-
-},{"../interval/distance-interval":11,"./chromatic-interval-set":40,"./is-binary-set":42,"./is-interval-set":43,"./is-note-set":44}],42:[function(require,module,exports){
-'use strict'
-
-var BINARY = /^1[01]*$/
-
+},{}],25:[function(require,module,exports){
 /**
- * Determine if a given number is a valid binary set number
- *
- * A valid binary set is any binary number that starts with 1 (P1 interval)
- * The binary number can be expressed in decimal
- *
- * @param {String} number - the number to test
- * @return {boolean} true if its a valid scale binary number
+ * Decorate a function to throw exception when return null
  *
  * @example
- * isBinary('100') // => true
- * isBinarySet('010') // => false
- * isBinarySet(2773) // => true
+ * var parse = require('tonal/note/parse')
+ * var strictParse = strict('Not a valid note', parse)
+ * strictParse('P8') // throws Error with msg 'Not a valid note'
  */
-function isBinarySet (number) {
-  return BINARY.test(number.toString(2))
-}
-
-module.exports = isBinarySet
-
-},{}],43:[function(require,module,exports){
-var isInterval = require('../interval/is-interval')
-
-/**
- * Test is the given set is an interval set
- *
- * An interval set is an array where all items are inteval strings and
- * the first item is 'P1'
- *
- * @param {Object} set - the set to be tested
- * @return {Boolean} true if is an interval set
- *
- * @example
- * isIntervalSet(['P1']) // => true
- */
-function isIntervalSet (set) {
-  if (!Array.isArray(set)) return false
-  if (set[0] !== 'P1') return false
-  for (var i = 0, total = set.length; i < total; i++) {
-    if (!isInterval(set[i])) return false
-  }
-  return true
-}
-
-module.exports = isIntervalSet
-
-},{"../interval/is-interval":15}],44:[function(require,module,exports){
-var isNote = require('../note/is-note')
-
-/**
- * Test if the given set is a valid note set
- *
- * A valid note set is an array of note strings
- *
- * @param {Object} set - the set to be tested
- * @return {Boolean} true if is a note set
- */
-function isNoteSet (set) {
-  if (!Array.isArray(set)) return false
-  for (var i = 0, total = set.length; i < total; i++) {
-    if (!isNote(set[i])) return false
-  }
-  return true
-}
-
-module.exports = isNoteSet
-
-},{"../note/is-note":29}],45:[function(require,module,exports){
-var isNotes = require('./is-note-set')
-var intervals = require('./interval-set')
-var transpose = require('../note/transpose')
-
-/**
- * Given a set and a note, return a set with the same intervals but starting from note
- *
- * @param {Array|String|Integer} set - the original set. Can be a notes or
- * intervals array, a binary string set or a decimal set
- */
-function noteSet (set, root) {
-  if (isNotes(set) && set[0] === root) return set
-  return intervals(set).map(function (interval) {
-    return transpose(interval, root)
-  })
-}
-
-module.exports = noteSet
-
-},{"../note/transpose":35,"./interval-set":41,"./is-note-set":44}],46:[function(require,module,exports){
-var intervals = require('./interval-set')
-var notes = require('./note-set')
-/**
- * Create a set (either a group of intervals or notes depending if you provide
- * a tonic parameter or not)
- *
- * It uses `set/intervals` or `set/notes` depending
- * on the action. Is a convenience function when creating scales or chords
- *
- * @see scale/scale
- * @see chord/chord
- *
- * @param {String} note - the tonic note (can be null)
- * @param {String|Integer|Array} identifier - the set identifier
- * @return {Array} an array of notes or intervals
- */
-function set (set, note) {
-  if (!note || /^\s*$/.test(note)) {
-    return intervals(set)
-  } else {
-    return notes(set, note)
+function strict (msg, func) {
+  return function () {
+    var r = func.apply(this, arguments)
+    if (r === null) throw Error(msg + ': ' + arguments[0])
+    return r
   }
 }
 
-module.exports = set
+module.exports = strict
 
-},{"./interval-set":41,"./note-set":45}]},{},[1]);
+},{}]},{},[1]);
