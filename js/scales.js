@@ -1,26 +1,183 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+
+/*
+ Precise scheduling for audio events is
+ based on the method described in this article by Chris Wilson:
+   http://www.html5rocks.com/en/tutorials/audio/scheduling/
+*/
+
+module.exports = function (ctx) {
+
+  var lookahead = 25.0 // ms
+  var scheduleAheadTime = 0.1 // s
+
+  var tempo // ticks per minute
+
+  var tickInterval // seconds per tick
+
+  var data = []
+
+  var currentTick = 0
+  var nextTickTime = 0
+
+  var tick = function (t, d, i) {}
+  var each = function (t, i) {}
+
+  var iterations = 0
+  var limit = 0
+
+  var timer
+  var running = false
+
+  function loop () {}
+
+  function nextTick () {
+    nextTickTime += tickInterval
+
+    // cycle through ticks
+    if (++currentTick >= data.length) {
+      currentTick = 0
+      iterations += 1
+    }
+
+  }
+
+  function scheduleTick (tickNum, time) {
+    tick.call(loop, time, data[tickNum], tickNum)
+  }
+
+  function scheduleIteration (iterationNum, time) {
+    each.call(loop, time, iterationNum)
+  }
+
+  function scheduler () {
+    while (nextTickTime < ctx.currentTime + scheduleAheadTime) {
+      scheduleTick(currentTick, nextTickTime)
+      if (currentTick === 0) {
+        scheduleIteration(iterations, nextTickTime)
+      }
+      nextTick()
+      if (limit && iterations >= limit) {
+        loop.reset()
+        return
+      }
+    }
+    timer = window.setTimeout(scheduler, lookahead)
+  }
+
+  loop.tempo = function (bpm) {
+    if (!arguments.length) return tempo
+    tempo = bpm
+    tickInterval = 60 / tempo
+    return loop
+  }
+  loop.tickInterval = function (s) {
+    if (!arguments.length) return tickInterval
+    tickInterval = s
+    tempo = 60 / tickInterval
+    return loop
+  }
+  loop.data = function (a) {
+    if (!arguments.length) return data
+    data = a
+    return loop
+  }
+  loop.lookahead = function (ms) {
+    if (!arguments.length) return lookahead
+    lookahead = ms
+    return loop
+  }
+  loop.scheduleAheadTime = function (s) {
+    if (!arguments.length) return scheduleAheadTime
+    scheduleAheadTime = s
+    return loop
+  }
+  loop.limit = function (n) {
+    if (!arguments.length) return limit
+    limit = n
+    return loop
+  }
+  loop.tick = function (f) {
+    if (!arguments.length) return tick
+    tick = f
+    return loop
+  }
+  loop.each = function (f) {
+    if (!arguments.length) return each
+    each = f
+    return loop
+  }
+  loop.start = function (t) {
+    running = true
+    nextTickTime = t || ctx.currentTime
+    scheduler()
+    return loop
+  }
+  loop.stop = function () {
+    window.clearTimeout(timer)
+    running = false
+    return loop
+  }
+  loop.reset = function () {
+    currentTick = 0
+    iterations = 0
+    return loop
+  }
+  loop.running = function () {
+    return running
+  }
+
+  return loop
+}
+
+},{}],2:[function(require,module,exports){
 var riot = require('riot')
 var scales = require('./scales.tag')
 require('./vexflow.tag')
 riot.mount(scales)
 
-},{"./scales.tag":2,"./vexflow.tag":4,"riot":5}],2:[function(require,module,exports){
+},{"./scales.tag":3,"./vexflow.tag":5,"riot":6}],3:[function(require,module,exports){
 var riot = require('riot');
-module.exports = riot.tag('scales', '<div> <h1>Scales demo { version }</h1> <select id="tonicSelect" onchange="{ tonicChanged }"> <option each="{ tonic in tonics }" value="{tonic}">{tonic}</option> </select> <select id="scaleType" onchange="{ scaleChanged }"> <option each="{ name in names }" value="{name}" __selected="{ name === \'major\' }">{name}</option> </select> <h3>{tonic} {name}</h3> <h5>Notes: { notes.join(\' \') }</h5> <vexflow notes="{ notes }"></vexflow> </div>', function(opts) {
+module.exports = riot.tag('scales', '<div> <h1>Scales demo { version }</h1> <select id="tonicSelect" onchange="{ tonicChanged }"> <option each="{ tonic in tonics }" value="{tonic}">{tonic}</option> </select> <select id="scaleType" onchange="{ scaleChanged }"> <option each="{ name in names }" value="{name}" __selected="{ name === \'major\' }">{name}</option> </select> <h3>{tonic} {name}</h3> <h5>Notes: { notes.join(\' \') }</h5> <vexflow notes="{ notes }"></vexflow> <a id="playBtn" onclick="{ play }" href="#">Play</a> </div>', function(opts) {
 
+  var ctx = new AudioContext()
+  var Soundfont = require('soundfont-player')
+  var soundfont = new Soundfont(ctx)
+  var instrument = soundfont.instrument('acoustic_grand_piano')
+  var Clock = require('./clock.js')
   var reverse = require('tonal/list/reverse')
   var scale = require('tonal/scale/scale')
+  var octaves = require('tonal/list/octaves')
   this.tonics = 'C C# Db D D# Eb E F F# Gb G G# Ab A A# Bb B'.split(' ')
   this.names = scale()
   this.names.sort()
   this.name = 'major'
   this.tonic = 'C'
   this.notes = notes(this.tonic, this.name)
+  this.clock = null
+
+  this.play = function(e) {
+    if (!this.clock) {
+      this.clock = new Clock(ctx)
+      this.clock.tempo(120).limit(1)
+      this.clock.tick(function (time, data, num) {
+        instrument.play(data, time, 1)
+      })
+    }
+    this.clock.data(this.notes)
+    if (this.clock.running()) {
+      this.playBtn.innerHTML = 'Play'
+      this.clock.stop().reset()
+    } else {
+      this.playBtn.innerHTML = 'Stop'
+      this.clock.start()
+    }
+  }.bind(this);
 
   function notes(tonic, name) {
-    var s = scale(tonic + ' ' + name )
+    var s = octaves(scale(tonic + ' ' + name ), 1)
+    return s.concat(reverse(s.slice(0, -1)))
     return s
-
   }
 
   this.scaleChanged = function(e) {
@@ -35,7 +192,7 @@ module.exports = riot.tag('scales', '<div> <h1>Scales demo { version }</h1> <sel
 
 });
 
-},{"riot":5,"tonal/list/reverse":17,"tonal/scale/scale":21}],3:[function(require,module,exports){
+},{"./clock.js":1,"riot":6,"soundfont-player":7,"tonal/list/octaves":21,"tonal/list/reverse":23,"tonal/scale/scale":28}],4:[function(require,module,exports){
 var parse = require('tonal/note/parse')
 var VexFlow = Vex.Flow
 
@@ -77,7 +234,7 @@ module.exports = function (canvas, width, height, notes) {
   voice.draw(ctx, stave)
 }
 
-},{"tonal/note/parse":19}],4:[function(require,module,exports){
+},{"tonal/note/parse":26}],5:[function(require,module,exports){
 var riot = require('riot');
 module.exports = riot.tag('vexflow', '<div> <canvas id="vex" width="800" height="100"></canvas> </div>', function(opts) {
     var vexflow = require('./vexflow.js')
@@ -87,7 +244,7 @@ module.exports = riot.tag('vexflow', '<div> <canvas id="vex" width="800" height=
   
 });
 
-},{"./vexflow.js":3,"riot":5}],5:[function(require,module,exports){
+},{"./vexflow.js":4,"riot":6}],6:[function(require,module,exports){
 /* Riot v2.2.4, @license MIT, (c) 2015 Muut Inc. + contributors */
 
 ;(function(window, undefined) {
@@ -1459,7 +1616,368 @@ riot.mountTo = riot.mount
 
 })(typeof window != 'undefined' ? window : void 0);
 
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
+'use strict'
+
+var base64DecodeToArray = require('./lib/b64decode.js')
+var parseNote = require('note-parser')
+
+function Soundfont (audioContext) {
+  if (!(this instanceof Soundfont)) return new Soundfont(audioContext)
+  this.ctx = audioContext
+  this.instruments = {}
+  this.promises = []
+}
+
+Soundfont.prototype.instrument = function (name) {
+  if (!name) return createDefaultInstrument(this.ctx, 'default')
+  var inst = this.instruments[name]
+  if (!inst) {
+    var ctx = this.ctx
+    inst = createDefaultInstrument(ctx, name)
+    var promise = Soundfont.loadBuffers(ctx, name).then(function (buffers) {
+      var realInst = createInstrument(ctx, name, buffers)
+      inst.play = realInst.play
+    })
+    this.promises.push(promise)
+    inst.onready = function (callback) {
+      return promise.then(callback)
+    }
+    this.instruments[name] = inst
+  }
+  return inst
+}
+
+Soundfont.prototype.onready = function (callback) {
+  Promise.all(this.promises).then(callback)
+}
+
+Soundfont.noteToMidi = function (note) {
+  if (!note) return null
+  if (note.midi) return note.midi
+  if (!isNaN(note)) return note
+  else return parseNote(note).midi
+}
+
+/*
+ * Soundfont.nameToUrl
+ * Given an instrument name returns a URL to its Soundfont js file
+ *
+ * @param {String} name - instrument name
+ * @returns {String} the Soundfont data url
+ */
+Soundfont.nameToUrl = function (name) {
+  return 'https://cdn.rawgit.com/gleitz/midi-js-Soundfonts/master/FluidR3_GM/' + name + '-ogg.js'
+}
+
+/*
+ * SoundFont.getScript
+ *
+ * Given a script URL returns a Promise with the script contents as text
+ * @param {String} url - the URL
+ */
+Soundfont.loadData = function (url) {
+  return new Promise(function (done, reject) {
+    var req = new window.XMLHttpRequest()
+    req.open('GET', url)
+
+    req.onload = function () {
+      if (req.status === 200) {
+        done(req.response)
+      } else {
+        reject(Error(req.statusText))
+      }
+    }
+    req.onerror = function () {
+      reject(Error('Network Error'))
+    }
+    req.send()
+  })
+}
+
+/*
+ *  Parse the SoundFont data and return a JSCON object
+ *  (SoundFont data are .js files wrapping json data)
+ *
+ * @param {String} data - the SoundFont js file content
+ * @returns {JSON} the parsed data as JSON object
+ */
+Soundfont.dataToJson = function (data) {
+  var begin = data.indexOf('MIDI.Soundfont.')
+  begin = data.indexOf('=', begin) + 2
+  var end = data.lastIndexOf(',')
+  return JSON.parse(data.slice(begin, end) + '}')
+}
+
+/*
+ * loadBuffers
+ *
+ * Given a Web Audio context and a instrument name
+ * load the instrument data and return a hash of audio buffers
+ *
+ * @param {Object} ctx - A Web Audio context
+ * @param {String} name - the sounfont instrument name
+ */
+Soundfont.loadBuffers = function (ctx, name) {
+  return Promise.resolve(name)
+    .then(Soundfont.nameToUrl)
+    .then(Soundfont.loadData)
+    .then(Soundfont.dataToJson)
+    .then(function (jsonData) {
+      return createBank(ctx, name, jsonData)
+    })
+    .then(decodeBank)
+    .then(function (bank) {
+      return bank.buffers
+    })
+}
+
+/*
+ * @param {Object} ctx - Web Audio context
+ * @param {String} name - The bank name
+ * @param {Object} data - The Soundfont instrument data as JSON
+ */
+function createBank (ctx, name, data) {
+  var bank = { ctx: ctx, name: name, data: data }
+  bank.buffers = {}
+
+  return bank
+}
+
+/*
+ * INTENAL: decodeBank
+ * Given an instrument, returns a Promise that resolves when
+ * all the notes from de instrument are decoded
+ */
+function decodeBank (bank) {
+  var promises = Object.keys(bank.data).map(function (note) {
+    return decodeNote(bank.ctx, bank.data[note])
+      .then(function (buffer) {
+        note = parseNote(note)
+        bank.buffers[note.midi] = buffer
+      })
+  })
+
+  return Promise.all(promises).then(function () {
+    return bank
+  })
+}
+
+/*
+ * Given a WAA context and a base64 encoded buffer data returns
+ * a Promise that resolves when the buffer is decoded
+ */
+function decodeNote (context, data) {
+  return new Promise(function (done, reject) {
+    var decodedData = base64DecodeToArray(data.split(',')[1]).buffer
+    context.decodeAudioData(decodedData, function (buffer) {
+      done(buffer)
+    }, function (e) {
+      reject('DecodeAudioData error', e)
+    })
+  })
+}
+
+/*
+ * createDefaultInstrument
+ */
+function createDefaultInstrument (context, name) {
+  var instrument = {
+    name: name,
+    play: function (note, time, duration, options) {
+      note = parseNote(note)
+      options = options || {}
+      var gain = options.gain || 0.2
+      var vcoType = options.vcoType || 'sine'
+
+      var vco = context.createOscillator()
+      vco.type = vcoType
+      vco.frequency.value = note.freq
+
+      /* VCA */
+      var vca = context.createGain()
+      vca.gain.value = gain
+
+      /* Connections */
+      vco.connect(vca)
+      vca.connect(context.destination)
+
+      vco.start(time)
+      vco.stop(time + duration)
+      return vco
+    }
+  }
+  return instrument
+}
+
+function createInstrument (audioContext, name, buffers) {
+  var instrument = {
+    name: name,
+    play: function (note, time, duration) {
+      var midi = Soundfont.noteToMidi(note)
+      var buffer = buffers[midi]
+      if (!buffer) {
+        console.log('WARNING: Note buffer not found: ', note)
+        return
+      }
+      var source = audioContext.createBufferSource()
+      source.buffer = buffer
+      source.connect(audioContext.destination)
+      source.start(time)
+      if (duration) source.stop(time + duration)
+      return source
+    }
+  }
+  return instrument
+}
+
+if (typeof module === 'object' && module.exports) module.exports = Soundfont
+if (typeof window !== 'undefined') window.Soundfont = Soundfont
+
+},{"./lib/b64decode.js":8,"note-parser":9}],8:[function(require,module,exports){
+'use strict'
+
+function b64ToUint6 (nChr) {
+  return nChr > 64 && nChr < 91 ?
+    nChr - 65
+    : nChr > 96 && nChr < 123 ?
+      nChr - 71
+      : nChr > 47 && nChr < 58 ?
+        nChr + 4
+        : nChr === 43 ?
+          62
+          : nChr === 47 ?
+            63
+            :
+            0
+
+}
+
+// Decode Base64 to Uint8Array
+// ---------------------------
+function base64DecodeToArray (sBase64, nBlocksSize) {
+  var sB64Enc = sBase64.replace(/[^A-Za-z0-9\+\/]/g, '')
+  var nInLen = sB64Enc.length
+  var nOutLen = nBlocksSize ?
+    Math.ceil((nInLen * 3 + 1 >> 2) / nBlocksSize) * nBlocksSize :
+    nInLen * 3 + 1 >> 2
+  var taBytes = new Uint8Array(nOutLen)
+
+  for (var nMod3, nMod4, nUint24 = 0, nOutIdx = 0, nInIdx = 0; nInIdx < nInLen; nInIdx++) {
+    nMod4 = nInIdx & 3
+    nUint24 |= b64ToUint6(sB64Enc.charCodeAt(nInIdx)) << 18 - 6 * nMod4
+    if (nMod4 === 3 || nInLen - nInIdx === 1) {
+      for (nMod3 = 0; nMod3 < 3 && nOutIdx < nOutLen; nMod3++, nOutIdx++) {
+        taBytes[nOutIdx] = nUint24 >>> (16 >>> nMod3 & 24) & 255
+      }
+      nUint24 = 0
+    }
+  }
+  return taBytes
+}
+
+module.exports = base64DecodeToArray
+
+},{}],9:[function(require,module,exports){
+'use strict';
+
+var NOTE = /^([a-gA-G])(#{0,2}|b{0,2})(-?\d{0,1})$/
+/*
+ * parseNote
+ *
+ * @param {String} note - the note string to be parsed
+ * @return {Object} a object with the following attributes:
+ * - pc: pitchClass, the letter of the note, ALWAYS in lower case
+ * - acc: the accidentals (or '' if no accidentals)
+ * - oct: the octave as integer. By default is 4
+ */
+var parse = function(note, defaultOctave, defaultValue) {
+  var parsed, match;
+  if(typeof(note) === 'string' && (match = NOTE.exec(note))) {
+    var octave = match[3] !== '' ? +match[3] : (defaultOctave || 4);
+    parsed = { pc: match[1].toLowerCase(),
+      acc: match[2], oct: octave };
+  } else if(typeof(note.pc) !== 'undefined'
+    && typeof(note.acc) !== 'undefined'
+    && typeof(note.oct) !== 'undefined') {
+    parsed = note;
+  }
+
+  if (parsed) {
+    parsed.midi = parsed.midi || toMidi(parsed);
+    parsed.freq = parsed.freq || midiToFrequency(parsed.midi);
+    return parsed;
+  } else if (typeof(defaultValue) !== 'undefined') {
+    return defaultValue;
+  } else {
+    throw Error("Invalid note format: " + note);
+  }
+}
+
+parse.toString = function(obj) {
+  return obj.pc + obj.acc + obj.oct;
+}
+
+var SEMITONES = {c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }
+function toMidi(note) {
+  var alter = note.acc.length;
+  if(note.acc[0] === 'b') alter = -1 * alter;
+  return SEMITONES[note.pc] + alter + 12 * (note.oct + 1);
+}
+function midiToFrequency (note) {
+    return Math.pow(2, (note-69)/12)*440;
+}
+
+module.exports = parse;
+
+},{}],10:[function(require,module,exports){
+var strict = require('../utils/strict')
+var parse = strict('Interval not valid', require('./parse'))
+var interval = require('./interval')
+
+/**
+ * Add two intervals
+ *
+ * @param {String} interval1 - the first interval
+ * @param {String} interval2 - the second interval
+ * @return {String} the resulting interval
+ *
+ * @example
+ * add('M2', 'M2') // => 'M3'
+ */
+function add (i1, i2) {
+  if (arguments.length === 1) {
+    return function (i2) {
+      return add(i1, i2)
+    }
+  }
+  i1 = parse(i1)
+  i2 = parse(i2)
+
+  var num = i1.dir * (i1.num - 1) + i2.dir * (i2.num - 1)
+  num = num < 0 ? -num + 1 : num + 1
+  var size = i1.semitones + i2.semitones
+  return fromNumAndSize(num, size)
+}
+
+module.exports = add
+
+// create an interval from a number and a size
+function fromNumAndSize (num, size) {
+  if (num === -1) num = 1
+  var dir = size < 0
+  // create a reference interval
+  var ref = parse(interval(num))
+  var refSize = ref.semitones
+  // get the difference in sizes
+  var diff = Math.abs(size) - refSize
+  var oct = Math.floor(Math.abs(diff) / 12)
+  diff = diff % 12
+
+  return interval(num, diff, oct, dir).name
+}
+
+},{"../utils/strict":32,"./interval":12,"./parse":14}],11:[function(require,module,exports){
 var strict = require('../utils/strict')
 var parse = strict('Note not valid', require('../note/parse'))
 var interval = require('./interval')
@@ -1503,7 +2021,7 @@ function fromNotes (from, to) {
 
 module.exports = fromNotes
 
-},{"../note/parse":19,"../utils/strict":25,"./interval":7}],7:[function(require,module,exports){
+},{"../note/parse":26,"../utils/strict":32,"./interval":12}],12:[function(require,module,exports){
 var parse = require('./parse')
 
 var QUALITIES = {
@@ -1549,7 +2067,7 @@ function interval (num, alter, oct, dir) {
 
 module.exports = interval
 
-},{"./parse":9}],8:[function(require,module,exports){
+},{"./parse":14}],13:[function(require,module,exports){
 var parse = require('./parse')
 /**
  * Test if a string is a valid interval
@@ -1568,7 +2086,7 @@ function isInterval (interval) {
 
 module.exports = isInterval
 
-},{"./parse":9}],9:[function(require,module,exports){
+},{"./parse":14}],14:[function(require,module,exports){
 'use strict'
 
 var REGEX = /^(dd|d|m|M|P|A|AA)(-?)(\d+)$/
@@ -1636,7 +2154,7 @@ var memoize = require('../utils/fastMemoize')
 var coerce = require('../utils/coerceParam')
 module.exports = coerce('name', memoize(parse))
 
-},{"../utils/coerceParam":23,"../utils/fastMemoize":24}],10:[function(require,module,exports){
+},{"../utils/coerceParam":30,"../utils/fastMemoize":31}],15:[function(require,module,exports){
 var strict = require('../utils/strict')
 var parseNote = strict('Note not valid', require('../note/parse'))
 var toNote = require('../note/note')
@@ -1707,7 +2225,7 @@ module.exports = function (interval, note) {
   }
 }
 
-},{"../note/note":18,"../note/parse":19,"../utils/strict":25,"./isInterval":8,"./parse":9}],11:[function(require,module,exports){
+},{"../note/note":25,"../note/parse":26,"../utils/strict":32,"./isInterval":13,"./parse":14}],16:[function(require,module,exports){
 var notes = require('../list/notes')
 var intervals = require('../list/intervals')
 
@@ -1772,7 +2290,7 @@ function parseName (name) {
   return m ? { tonic: m[1], type: m[2] } : m
 }
 
-},{"../list/intervals":12,"../list/notes":15}],12:[function(require,module,exports){
+},{"../list/intervals":17,"../list/notes":20}],17:[function(require,module,exports){
 var distance = require('../interval/fromNotes')
 var toList = require('./list')
 
@@ -1785,7 +2303,7 @@ function intervals (list) {
 
 module.exports = intervals
 
-},{"../interval/fromNotes":6,"./list":14}],13:[function(require,module,exports){
+},{"../interval/fromNotes":11,"./list":19}],18:[function(require,module,exports){
 'use strict'
 
 var BINARY = /^1[01]{11}$/
@@ -1814,7 +2332,7 @@ function isBinaryList (number) {
 
 module.exports = isBinaryList
 
-},{}],14:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 var parse = require('./parse')
 /**
  * Get a list of notes or isInterval
@@ -1842,7 +2360,7 @@ function list (l) {
 
 module.exports = list
 
-},{"./parse":16}],15:[function(require,module,exports){
+},{"./parse":22}],20:[function(require,module,exports){
 var transpose = require('../interval/transpose')
 var intervals = require('./intervals')
 var toList = require('./list')
@@ -1861,7 +2379,38 @@ function notes (list, tonic) {
 
 module.exports = notes
 
-},{"../interval/transpose":10,"./intervals":12,"./list":14}],16:[function(require,module,exports){
+},{"../interval/transpose":15,"./intervals":17,"./list":19}],21:[function(require,module,exports){
+var toList = require('./list')
+var transpose = require('./transpose')
+var interval = require('../interval/interval')
+
+// TODO: check the list is smaller than an octave
+/**
+ * Return a list spanning a number of octaves
+ *
+ * @param {String|Array} list - the list
+ * @param {Integer} number - the number of octaves
+ * @return {Array} a list spanning the specified number of octaves
+ *
+ * @example
+ * octaves('C D', 0) // => ['C4', 'D4']
+ * octaves('C D', 1) // => ['C4', 'D4', 'C5']
+ * octaves('C D', 2) // => ['C4', 'D4', 'C5', 'D5', 'C6']
+ * octaves('P1 M2', 2) // => ['P1', 'M2', 'P8', 'M9', 'P15']
+ */
+function octaves (list, number) {
+  list = toList(list)
+  if (!number) return list
+  var o = list
+  for (var i = 1; i < number; i++) {
+    o = o.concat(transpose(interval('P1', 0, i), list))
+  }
+  return o.concat(transpose(interval(1, 0, number), list[0]))
+}
+
+module.exports = octaves
+
+},{"../interval/interval":12,"./list":19,"./transpose":24}],22:[function(require,module,exports){
 var isBinary = require('./isBinary')
 var toNote = require('../note/note')
 var isInterval = require('../interval/isInterval')
@@ -1913,7 +2462,7 @@ function toIntervals (list) {
   return list
 }
 
-},{"../interval/isInterval":8,"../note/note":18,"./isBinary":13}],17:[function(require,module,exports){
+},{"../interval/isInterval":13,"../note/note":25,"./isBinary":18}],23:[function(require,module,exports){
 'use strict'
 
 var list = require('./list')
@@ -1933,7 +2482,21 @@ function reverse (forward) {
 
 module.exports = reverse
 
-},{"./list":14}],18:[function(require,module,exports){
+},{"./list":19}],24:[function(require,module,exports){
+var trNote = require('../interval/transpose')
+var isInterval = require('../interval/isInterval')
+var trInterval = require('../interval/add')
+var toList = require('./list')
+
+function transpose (interval, list) {
+  list = toList(list)
+  var tr = isInterval(list[0]) ? trInterval : trNote
+  return list.map(tr(interval))
+}
+
+module.exports = transpose
+
+},{"../interval/add":10,"../interval/isInterval":13,"../interval/transpose":15,"./list":19}],25:[function(require,module,exports){
 var parse = require('./parse')
 
 var ACCIDENTALS = { '-4': 'bbbb', '-3': 'bbb', '-2': 'bb', '-1': 'b',
@@ -1977,7 +2540,7 @@ function note (note, acc, oct) {
 
 module.exports = note
 
-},{"./parse":19}],19:[function(require,module,exports){
+},{"./parse":26}],26:[function(require,module,exports){
 var REGEX = /^([a-gA-G])(#{1,4}|b{1,4}|x{1,2}|)(\d*)$/
 var SEMITONES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
 
@@ -2027,7 +2590,7 @@ var memoize = require('../utils/fastMemoize')
 var coerce = require('../utils/coerceParam')
 module.exports = coerce('name', memoize(parse))
 
-},{"../utils/coerceParam":23,"../utils/fastMemoize":24}],20:[function(require,module,exports){
+},{"../utils/coerceParam":30,"../utils/fastMemoize":31}],27:[function(require,module,exports){
 var parseNote = require('../note/parse')
 
 /**
@@ -2058,7 +2621,7 @@ function parse (scale) {
 
 module.exports = parse
 
-},{"../note/parse":19}],21:[function(require,module,exports){
+},{"../note/parse":26}],28:[function(require,module,exports){
 var data = require('./scales-all.json')
 var dictionary = require('../list/dictionary')
 var parse = require('./parse')
@@ -2079,7 +2642,7 @@ var parse = require('./parse')
  */
 module.exports = dictionary(data, parse)
 
-},{"../list/dictionary":11,"./parse":20,"./scales-all.json":22}],22:[function(require,module,exports){
+},{"../list/dictionary":16,"./parse":27,"./scales-all.json":29}],29:[function(require,module,exports){
 module.exports={
   "lydian": "P1 M2 M3 A4 P5 M6 M7",
   "major": "P1 M2 M3 P4 P5 M6 M7",
@@ -2191,7 +2754,7 @@ module.exports={
   "phrygian major": "P1 m2 M3 P4 P5 m6 m7"
 }
 
-},{}],23:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 /**
  * Internal function: ensures the param is a string
  *
@@ -2211,7 +2774,7 @@ function coerce (name, func) {
 
 module.exports = coerce
 
-},{}],24:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 /**
  * Simplest and fastest memoize function I can imagine
  *
@@ -2234,7 +2797,7 @@ function memoize (func) {
 }
 module.exports = memoize
 
-},{}],25:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 /**
  * Decorate a function to throw exception when return null
  *
@@ -2253,4 +2816,4 @@ function strict (msg, func) {
 
 module.exports = strict
 
-},{}]},{},[1]);
+},{}]},{},[2]);

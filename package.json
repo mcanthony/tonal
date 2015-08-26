@@ -22,6 +22,7 @@
   "homepage": "https://github.com/danigb/tonal#readme",
   "dependencies": {
     "riot": "^2.2.4",
+    "soundfont-player": "^0.4.0",
     "tonal": "file:../tonal/lib",
     "tonal-tools": "file:../tonal"
   },
