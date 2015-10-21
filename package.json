@@ -1,15 +1,16 @@
 {
-  "name": "tonal-tools",
-  "version": "0.1.0",
-  "private": "true",
-  "description": "Music theory for javascript",
+  "name": "tonal",
+  "version": "0.20.0-pre",
+  "description": "Functional, modular music theory library",
+  "main": "index.js",
   "scripts": {
-    "test": "vows --spec test/*.js test/**/*.js",
-    "docs": "node ./utils/generateDocs.js",
-    "build": "node ./utils/generateFacades.js",
-    "dist": "browserify ./lib/index.js > dist/tonal.js && browserify ./lib/index.js | uglifyjs -c > dist/tonal.min.js",
-    "lint": "jshint .",
-    "validate": "npm ls"
+    "test": "vows --spec test/*.js",
+    "docs": "docme API.md",
+    "dist": "browserify index.js > dist/tonal.js && browserify index.js | uglifyjs > dist/tonal.min.mjs && ls -all dist/*",
+    "coverage": "istanbul cover vows test/*.js",
+    "cover": "npm run coverage && open ./coverage/lcov-report/index.html",
+    "benchmarks": "node test/benchmarks/*.js",
+    "climate": "npm run coverage && CODECLIMATE_REPO_TOKEN=fcfefb53aa586b904e50df4da52d6dc294182107e236117758c3a048b17491ce codeclimate-test-reporter < coverage/lcov.info"
   },
   "repository": {
     "type": "git",
@@ -26,25 +27,27 @@
     "chords",
     "chord",
     "scale",
-    "scales"
+    "scales",
+    "key"
   ],
-  "author": "danigb",
+  "author": "danigb <danigb@gmail.com>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/danigb/tonal/issues"
   },
   "homepage": "https://github.com/danigb/tonal#readme",
-  "devDependencies": {
-    "benchmark": "^1.0.0",
-    "docme": "^0.3.0",
-    "dox": "^0.8.0",
-    "lodash": "^3.10.1",
-    "precommit-hook": "^3.0.0",
-    "teoria": "^2.0.1",
-    "uglifyify": "^3.0.1",
-    "vows": "^0.8.1"
+  "dependencies": {
+    "enharmonics": "^0.3.0",
+    "interval-parser": "^0.12.0",
+    "music-chord": "^0.3.0",
+    "music-gamut": "^0.5.1",
+    "music-interval": "^0.3.0",
+    "music-pitch": "^0.1.0",
+    "music-scale": "^0.12.0",
+    "pitch-parser": "^0.3.0",
+    "pitch-transpose": "^0.1.1"
   },
-  "pre-commit": [
-    "test"
-  ]
+  "devDependencies": {
+    "vows": "^0.8.1"
+  }
 }
