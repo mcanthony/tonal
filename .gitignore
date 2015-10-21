@@ -1,6 +1,3 @@
 node_modules/
-pruebas/
-dist/
 npm-debug.log
-lib/README.md
-lib/npm-debug.log
+coverage/

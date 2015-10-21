@@ -1,8 +1,11 @@
 # tonal
 
 [![Build Status](https://travis-ci.org/danigb/tonal.svg?branch=master)](https://travis-ci.org/danigb/tonal)
+[![Test Coverage](https://codeclimate.com/github/danigb/tonal/badges/coverage.svg)](https://codeclimate.com/github/danigb/tonal/coverage)
 [![Code Climate](https://codeclimate.com/github/danigb/tonal/badges/gpa.svg)](https://codeclimate.com/github/danigb/tonal)
 [![js-standard-style](https://img.shields.io/badge/code%20style-standard-brightgreen.svg?style=flat)](https://github.com/feross/standard)
+[![npm](https://img.shields.io/npm/v/tonal.svg)](https://www.npmjs.com/package/tonal)
+[![array-notation](https://img.shields.io/badge/array--notation-compatible-yellow.svg)](https://github.com/danigb/pitch-array)
 
 Tonal is a library to create and manipulate tonal elements of music (pitches, chords, scales and keys). It deals with abstractions (not actual music) and can be used to develop midi or audio software:
 
@@ -52,7 +55,7 @@ Tonal is a facade of several npm modules:
 
 ## Usage
 
-Install via npm: `npm i --save tonal` or use the distribution file ready for browsers.
+Install via npm: `npm i --save tonal` or use the distribution file ready for browsers (27kb minified)
 
 ## Documentation and tests
 

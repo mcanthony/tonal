@@ -1,0 +1,2138 @@
+(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+'use strict'
+
+var tonal = {}
+
+tonal.pitch = require('music-pitch')
+tonal.pitch.notation = require('pitch-parser')
+tonal.pitch.enharmonics = require('enharmonics')
+tonal.transpose = require('pitch-transpose')
+
+tonal.interval = require('music-interval')
+tonal.interval.notation = require('interval-parser')
+
+tonal.gamut = require('music-gamut')
+
+tonal.scale = require('music-scale')
+tonal.chord = require('music-chord')
+
+if (typeof module === 'object' && module.exports) module.exports = tonal
+if (typeof window !== 'undefined') window.tonal = tonal
+
+},{"enharmonics":2,"interval-parser":6,"music-chord":7,"music-gamut":9,"music-interval":13,"music-pitch":15,"music-scale":21,"pitch-parser":28,"pitch-transpose":29}],2:[function(require,module,exports){
+'use strict'
+
+var transpose = require('pitch-transpose')
+
+var ASC = [1, -2, 0] // dimished second
+var DESC = [6, 1, -1] // descending dimished second
+
+/**
+ * Get all the enharmonics of a pitch (up to 4 alterations)
+ *
+ * @name enharmonics
+ * @function
+ * @param {String} pitch - the pitch to get the enharmonics from
+ * @param {boolean} includeSource - (Optional) If true, the returned array
+ * will contain the given pitch. False by default
+ * @return {Array<String>} an array of pitches ordered by distance to the given one
+ *
+ * @example
+ * enharmonics('C') // => ['B#', 'Dbb']
+ * enharmonics('A') // => ['G##', 'Bbb']
+ * enharmonics('C#4') // => ['B##3', 'Db4']
+ * enharmonics('Db') // => ['C#', 'Ebbb'])
+ */
+function enharmonics (pitch, includePitch) {
+  var enharmonics = []
+  enharmonics.push(transpose(DESC, pitch))
+  if (includePitch) enharmonics.push(pitch)
+  enharmonics.push(transpose(ASC, pitch))
+  return enharmonics
+}
+
+module.exports = enharmonics
+
+},{"pitch-transpose":3}],3:[function(require,module,exports){
+var asInterval = require('interval-parser')
+var asPitch = require('pitch-parser')
+var op = require('pitch-op')
+
+var isArray = Array.isArray
+
+/**
+ * Transposes a pitch by an interval
+ *
+ * @param {String|Array} a - a pitch or interval in string or array notation
+ * @param {String|Array} b - a pitch or interval in string or array notation
+ * @return {String|Array} the transposed pitch
+ *
+ * @example
+ * transpose('3m', 'C4') // => 'Eb4'
+ * transpose('C4', '3m') // => 'Eb4'
+ * tranpose([1, 0, 2], [3, -1, 0]) // => [3, 0, 2]
+ */
+function transpose (interval, pitch) {
+  if (arguments.length === 1) return function (p) { return transpose(interval, p) }
+  var iArr = isArray(interval)
+  var pArr = isArray(pitch)
+  var i = iArr ? interval : parse(interval)
+  var p = pArr ? pitch : parse(pitch)
+  var sum = op.add(i, p)
+  return iArr && pArr ? sum : asPitch(sum)
+}
+
+function parse (p) { return asPitch(p) || asInterval(p) }
+
+module.exports = transpose
+
+},{"interval-parser":6,"pitch-op":4,"pitch-parser":28}],4:[function(require,module,exports){
+'use strict'
+
+var fifths = require('pitch-fifths')
+
+var SEMITONES = [0, 2, 4, 5, 7, 9, 11]
+
+var op = {}
+
+/**
+ * Get pitch class of a pitch.
+ *
+ * @name pitchClass
+ * @function
+ * @param {Array} pitch - the pitch
+ * @return {Array} the pitch class of the pitch
+ *
+ * @example
+ * pitchClass([1, -2, 3]) // => [1, -2, nul]
+ */
+op.pitchClass = function (p) { return p ? [p[0], p[1], null] : null }
+
+/**
+ * Set octave of a pitch.
+ *
+ * This function can be partially applied (Integer -> Array -> Array)
+ *
+ * @name setOctave
+ * @function
+ * @param {Integer} octave - the octave to set
+ * @param {Array} pitch - the pitch
+ * @return {Array} the pitch with the given octave
+ *
+ * @example
+ * setOctave(2, [1, 2, 0]) // => [1, 2, 2]
+ * // partially applied, you get a function:
+ * arrayOfPitchs.map(setOctave(2))
+ */
+op.setOctave = function (num, p) {
+  if (arguments.length > 1) return op.setOctave(num)(p)
+  else return function (p) { return p ? [p[0], p[1], num] : null }
+}
+
+/**
+ * Simplify interval (set the octave to 0)
+ *
+ * @name simplify
+ * @function
+ * @param {Array} interval - the interval
+ * @return {Array} the simplified interval
+ *
+ * @example
+ * op.simplify([1, 2, 3]) // => [1, 2, 0]
+ */
+op.simplify = op.setOctave(0)
+
+/**
+ * Set the octave only if not present
+ *
+ * This function can be partially applied (Integer -> Array -> Array)
+ *
+ * @name setDefaultOctave
+ * @function
+ * @param {Integer} octave - the octave number
+ * @param {Array} pitch - the pitch
+ *
+ * @example
+ * op.setDefaultOctave(1, [1, 2, null]) // => [1, 2, 1]
+ * op.setDefaultOctave(1, [1, 2, 3]) // => [1, 2, 3]
+ * // partially applied:
+ * arrayOfPitches.map(op.setDefaultOctave(3))
+ */
+op.setDefaultOctave = function (octave, pitch) {
+  if (arguments.length > 1) return op.setDefaultOctave(octave)(pitch)
+  return function (i) { return i && i[2] === null ? [i[0], i[1], octave] : i }
+}
+
+/**
+ * Get distance in semitones from `[0, 0, 0]` (`'C0'` or `'1P'`)
+ *
+ * @name semitones
+ * @function
+ * @param {Array} pitch - the pitch or interval
+ * @return {Integer} the distance
+ *
+ * @example
+ * op.semitones([1, 1, 0]) // => 3
+ * op.semitones([0, 0, 0]) // => 0
+ */
+op.semitones = function (i) { return i ? SEMITONES[i[0] % 7] + i[1] + 12 * i[2] : null }
+
+/**
+ * Get a comparator to sort pitches by height (frequency)
+ *
+ * @name comparator
+ * @function
+ * @param {Boolean} descending - set to `true` if want a descending comparator
+ * @return {Function} the comparator function
+ *
+ * @example
+ * arrayOfPitches.sort(op.comparator())
+ */
+op.comparator = function (descending) {
+  return descending ? function (a, b) { return op.semitones(b) - op.semitones(a) }
+    : function (a, b) { return op.semitones(a) - op.semitones(b) }
+}
+
+/**
+ * Add two pitches or intervals. Can be used to tranpose pitches.
+ *
+ * @param {Array} a - one pitch or interval in [pitch-array](https://github.com/danigb/pitch-array) format
+ * @param {Array} b - the other pitch or interval in [pitch-array](https://github.com/danigb/pitch-array) format
+ * @return {Array} both pitches or intervals added in [pitch-array](https://github.com/danigb/pitch-array) format
+ *
+ * @example
+ * var op = require('pitch-op')
+ * op.add([3, 0, 0], [4, 0, 0]) // => [0, 0, 1]
+ */
+function add (a, b) {
+  var fifths = a[0] + b[0]
+  var octaves = a[1] === null || b[1] === null ? null : a[1] + b[1]
+  return [fifths, octaves]
+}
+op.add = function (a, b) {
+  if (!a || !b) return null
+  return fifths.toPitch(add(fifths(a), fifths(b)))
+}
+
+/**
+ * Subtract two pitches or intervals. Can be used to find the distance between pitches.
+ *
+ * @name subtract
+ * @function
+ * @param {Array} a - one pitch or interval in [pitch-array](https://github.com/danigb/pitch-array) format
+ * @param {Array} b - the other pitch or interval in [pitch-array](https://github.com/danigb/pitch-array) format
+ * @return {Array} both pitches or intervals substracted [pitch-array](https://github.com/danigb/pitch-array) format
+ *
+ * @example
+ * var op = require('pitch-op')
+ * op.subtract([4, 0, 0], [3, 0, 0]) // => [1, 0, 0]
+ */
+function subtract (a, b) {
+  var fifths = b[0] - a[0]
+  var octaves = a[1] !== null && b[1] !== null ? b[1] - a[1] : null
+  return [fifths, octaves]
+}
+op.subtract = function (a, b) {
+  if (!a || !b) return null
+  return fifths.toPitch(subtract(fifths(a), fifths(b)))
+}
+
+/**
+ * Multiply a pitch or interval by a scalar
+ *
+ * @name multiply
+ * @function
+ * @param {Array} n - the scalar
+ * @param {Array} a - the pitch or interval in [pitch-array](https://github.com/danigb/pitch-array) format
+ * @return {Array} the pitch or interval multiplied in [pitch-array](https://github.com/danigb/pitch-array) format
+ *
+ * @example
+ * var op = require('pitch-op')
+ * op.multiply(2, [4, 0, 0]) // => [1, 0, 1]
+ */
+function multiply (m, a) { return [m * a[0], a[1] === null ? null : m * a[1]] }
+op.multiply = function (m, a) {
+  if (!a) return null
+  return fifths.toPitch(multiply(+m, fifths(a)))
+}
+
+module.exports = op
+
+},{"pitch-fifths":5}],5:[function(require,module,exports){
+'use strict'
+
+// The fifths vector representation of: 1P, 2M, 3M, 4P, 5P, 6M, 7M
+var BASE_TO = [ [0, 0], [2, -1], [4, -2], [-1, 1], [1, 0], [3, -1], [5, -2] ]
+var BASE_FROM = [ [0, 0], [4, 0], [1, 1], [5, 1], [2, 2], [6, 2], [3, -1] ]
+
+/**
+ * Get a pitch or interval measured in fifths and octaves
+ *
+ * Every interval (or pitch) can be expressed by repeating ascending or descending
+ * fifths and octaves. For exaple, interval major second is two fifths up and
+ * one octave down:
+ * `fifths([1, 0, 0]) // => [2, -1]`
+ *
+ * This representation is useful for calculating interval distances, transpositions
+ * or keys
+ *
+ * @param {Array} apitch - the pitch or interval as [a-pitch](https://github.com/danigb/a-pitch)
+ * @return {Array} an array with the form [fifths, octaves] where both are integers
+ *
+ * @example
+ * var fifths = require('pitch-fifths')
+ * fifths([0, 0, 0]) // => [0, 0]
+ * fifths([0, 0, 1]) // => [0, 1]
+ * fifths([1, 0, 0]) // => [2, -1]
+ */
+function fifths (t) {
+  var base = BASE_TO[t[0] % 7]
+  var fifths = base[0] + 7 * t[1]
+  var oct = t[2] !== null ? base[1] + t[2] - 4 * t[1] : null
+  return [fifths, oct]
+}
+
+/**
+ * Get the [a-pitch](https://github.com/danigb/a-pitch) structure from a
+ * fifths array
+ *
+ * @param {Array} coord - the fifths array
+ * @return {Array} the a-pitch structure
+ *
+ * @example
+ * var fifths = require('pitch-fifths')
+ * fifths.toPitch([3, -1]) // => [6, 0, 1]
+ */
+function toPitch (coord) {
+  var q = coord[0] % 7
+  var index = q < 0 ? 7 - Math.abs(q) : q
+  var alter = Math.floor((coord[0] + 1) / 7)
+
+  var base = BASE_FROM[index]
+  var oct = coord[1] === null ? null : base[1] + alter * 4 + coord[1]
+  return [base[0], alter, oct]
+}
+
+fifths.toPitch = toPitch
+module.exports = fifths
+
+},{}],6:[function(require,module,exports){
+'use strict'
+
+var INTERVAL = /^([-+]?)(\d+)(d{1,4}|m|M|P|A{1,4}|b{1,4}|#{1,4}|)$/
+var QALT = {
+  P: { dddd: -4, ddd: -3, dd: -2, d: -1, P: 0, A: 1, AA: 2, AAA: 3, AAAA: 4 },
+  M: { ddd: -4, dd: -3, d: -2, m: -1, M: 0, A: 1, AA: 2, AAA: 3, AAAA: 4 }
+}
+var ALTER = {
+  P: ['dddd', 'ddd', 'dd', 'd', 'P', 'A', 'AA', 'AAA', 'AAAA'],
+  M: ['ddd', 'dd', 'd', 'm', 'M', 'A', 'AA', 'AAA', 'AAAA']
+}
+var TYPES = 'PMMPPMM'
+
+var cache = {}
+
+/**
+ * Converts between interval strings and [array notation](https://github.com/danigb/a-pitch)
+ *
+ * The interval string can be in two different formats:
+ *
+ * - As interval (num + quality): `'1P' '3M' '5P' '13A'` are valid intervals
+ * - As scale degree (alterations + num): `'b2' '#4' 'b9'` are valid intervals
+ *
+ * The array notation is an array in the form `[num, alter, oct]`. See [a-pitch](https://github.com/danigb/a-pitch)
+ * for more infor about array notation.
+ *
+ * This function caches the result to get better performance. If for some
+ * reason you don't want to cache, use `interval.parse` and `interval.build`
+ *
+ * @param {String|Array} value - the interval in either string or array notation
+ * @return {Array|String} the interval (as string if was array, as array if was string).
+ * null if not a valid array
+ *
+ * @example
+ * var interval = require('interval-parser')
+ * interval('3M') // => [2, 0, 1]
+ * interval([2, 0, 1]) // => '3M'
+ *
+ * @example // parse strings
+ * interval('1P') // => [0, 0, 0]
+ * interval('2b') // same as interval('2m')
+ *
+ * @example // build strings
+ * interval.build([1, 0, 0]) // => '2M'
+ * interval.build([1, 0, 1]) // => '9M'
+ */
+function interval (val) {
+  if (Array.isArray(val)) {
+    var str = '|' + val[0] + '|' + val[1] + '|' + val[2]
+    return str in cache ? cache[str] : cache[str] = interval.build(val)
+  } else {
+    return val in cache ? cache[val] : cache[val] = interval.parse(val)
+  }
+}
+
+/**
+ * Parses an interval string and returns [a-pitch](https://github.com/danigb/a-pitch) array
+ *
+ * The interval string can be in two different formats:
+ *
+ * - As interval (num + quality): `'1P' '3M' '5P' '13A'` are valid intervals
+ * - As scale degree (alterations + num): `'b2' '#4' 'b9'` are valid intervals
+ *
+ * @param {String} str - the interval string
+ * @return {Array} the a-pitch representation
+ *
+ * @example
+ * var interval = require('interval-parser')
+ * interval.parse('1P') // => [0, 0, 0]
+ * interval.parse('2m') // => [0, -1, 0]
+ * interval.parse('1') // same as interval.parse('1P')
+ * interval.parse('5b') // same as interval.parse('5d')
+ * interval.parse('2b') // same as interval.parse('2m')
+ */
+interval.parse = function parse (str) {
+  var m = INTERVAL.exec(str)
+  if (!m) return null
+  var dir = m[1] === '-' ? -1 : 1
+  var num = +m[2] - 1
+
+  var simple = num % 7
+  var oct = dir * Math.floor(num / 7)
+  var type = TYPES[simple]
+
+  var alt
+  if (m[3] === '') alt = 0
+  else if (m[3][0] === '#') alt = m[3].length
+  else if (m[3][0] === 'b') alt = -m[3].length
+  else {
+    alt = QALT[type][m[3]]
+    if (typeof alt === 'undefined') return null
+  }
+
+  // if descending, invert it and octave lower
+  if (dir === -1) {
+    alt = type === 'P' ? -alt : -(alt + 1)
+    if (simple !== 0) {
+      simple = 7 - simple
+      oct--
+    }
+  }
+  return [simple, alt, oct]
+}
+
+/*
+ * Convert from an [a-pitch](https://github.com/danigb/a-pitch) to an interval string
+ *
+ * @param {Array} interval - the interval [a-pitch](https://github.com/danigb/a-pitch) array
+ * @return {String} the interval string
+ *
+ * @example
+ * var interval = require('interval-parser')
+ * interval.build([1, 0, 0]) // => '2M'
+ */
+interval.build = function build (i) {
+  if (!i || !Array.isArray(i)) return null
+  var t = TYPES[Math.abs(i[0]) % 7]
+  var n = number(i)
+  var alt = i[1]
+  if (n < 0) alt = t === 'P' ? -alt : -(alt + 1)
+  var q = ALTER[t][4 + alt]
+  if (!q) return null
+  return n + q
+}
+
+function number (i) {
+  var simple = (i[0] % 7) + 1
+  if (i[2] === null) return simple
+  var dir = i[2] < 0 ? -1 : 1
+  var oct = Math.abs(i[2])
+  if (dir < 0) {
+    simple = 9 - simple
+    oct--
+  }
+  return dir * (simple + 7 * oct)
+}
+
+module.exports = interval
+
+},{}],7:[function(require,module,exports){
+'use strict'
+
+var curry = require('curry')
+var gamut = require('music-gamut')
+
+/**
+ * Build a chord from a source and a tonic
+ *
+ * A source can be a list of intervals or notes. The tonic must be
+ * a pitch (with or without octave)
+ *
+ * This function is currified, so you can partially apply the function passing
+ * one parameter instead of two (see example)
+ *
+ * @param {Array} source - the list of intervals or notes
+ * @param {String} tonic - the tonic of the chord or null to get the intervals
+ * @return {Array} the chord notes (or intervals if null tonic)
+ *
+ * @example
+ * var chord = require('music-chord')
+ * chord('1 3 5 6', 'G') // => ['G', 'B', 'D', 'E']
+ * var maj79 = chord('C E G B D')
+ * maj79('A4') // => ['A4', 'C#5', 'E5', 'G#5', 'B5']
+ */
+function chord (src, tonic) {
+  var intervals = gamut.sortBySize(gamut.distances(null, src))
+  return tonic ? gamut.transpose(tonic, intervals) : intervals
+}
+
+module.exports = curry(chord)
+
+},{"curry":8,"music-gamut":9}],8:[function(require,module,exports){
+var slice = Array.prototype.slice;
+var toArray = function(a){ return slice.call(a) }
+var tail = function(a){ return slice.call(a, 1) }
+
+// fn, [value] -> fn
+//-- create a curried function, incorporating any number of
+//-- pre-existing arguments (e.g. if you're further currying a function).
+var createFn = function(fn, args, totalArity){
+    var remainingArity = totalArity - args.length;
+
+    switch (remainingArity) {
+        case 0: return function(){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 1: return function(a){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 2: return function(a,b){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 3: return function(a,b,c){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 4: return function(a,b,c,d){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 5: return function(a,b,c,d,e){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 6: return function(a,b,c,d,e,f){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 7: return function(a,b,c,d,e,f,g){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 8: return function(a,b,c,d,e,f,g,h){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 9: return function(a,b,c,d,e,f,g,h,i){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        case 10: return function(a,b,c,d,e,f,g,h,i,j){ return processInvocation(fn, concatArgs(args, arguments), totalArity) };
+        default: return createEvalFn(fn, args, remainingArity);
+    }
+}
+
+// [value], arguments -> [value]
+//-- concat new arguments onto old arguments array
+var concatArgs = function(args1, args2){
+    return args1.concat(toArray(args2));
+}
+
+// fn, [value], int -> fn
+//-- create a function of the correct arity by the use of eval,
+//-- so that curry can handle functions of any arity
+var createEvalFn = function(fn, args, arity){
+    var argList = makeArgList(arity);
+
+    //-- hack for IE's faulty eval parsing -- http://stackoverflow.com/a/6807726
+    var fnStr = 'false||' +
+                'function(' + argList + '){ return processInvocation(fn, concatArgs(args, arguments)); }';
+    return eval(fnStr);
+}
+
+var makeArgList = function(len){
+    var a = [];
+    for ( var i = 0; i < len; i += 1 ) a.push('a' + i.toString());
+    return a.join(',');
+}
+
+var trimArrLength = function(arr, length){
+    if ( arr.length > length ) return arr.slice(0, length);
+    else return arr;
+}
+
+// fn, [value] -> value
+//-- handle a function being invoked.
+//-- if the arg list is long enough, the function will be called
+//-- otherwise, a new curried version is created.
+var processInvocation = function(fn, argsArr, totalArity){
+    argsArr = trimArrLength(argsArr, totalArity);
+
+    if ( argsArr.length === totalArity ) return fn.apply(null, argsArr);
+    return createFn(fn, argsArr, totalArity);
+}
+
+// fn -> fn
+//-- curries a function! <3
+var curry = function(fn){
+    return createFn(fn, [], fn.length);
+}
+
+// num, fn -> fn
+//-- curries a function to a certain arity! <33
+curry.to = curry(function(arity, fn){
+    return createFn(fn, [], arity);
+});
+
+// num, fn -> fn
+//-- adapts a function in the context-first style
+//-- to a curried version. <3333
+curry.adaptTo = curry(function(num, fn){
+    return curry.to(num, function(context){
+        var args = tail(arguments).concat(context);
+        return fn.apply(this, args);
+    });
+})
+
+// fn -> fn
+//-- adapts a function in the context-first style to
+//-- a curried version. <333
+curry.adapt = function(fn){
+    return curry.adaptTo(fn.length, fn)
+}
+
+
+module.exports = curry;
+
+},{}],9:[function(require,module,exports){
+'use strict'
+
+var asPitch = require('pitch-parser')
+var asInterval = require('interval-parser')
+var op = require('./operations')
+
+// separator pattern to convert a list string to an array
+var SEP = /\s*\|\s*|\s*,\s*|\s+/
+
+/**
+ * Get a gamut: create an array from a source. The source can be a string with items separated by
+ * spaces, commas or bars (`|`), an array or an object.
+ *
+ * If the source is an array, it's returned as it. If its an object you get an
+ * array with the object as the only element.
+ *
+ * This function does not perform any transformation to the items of the array.
+ * This function __always__ return an array, even if its empty
+ *
+ * @name gamut
+ * @function
+ * @param {String|Array|Object} source - the source
+ * @return {Array} the source converted to an array (never null)
+ *
+ * @example
+ * gamut('c d e') // => [ 'c', 'd', 'e' ]
+ * gamut('CMaj7 | Dm7 G7') // => [ 'CMaj7', 'Dm7', 'G7' ]
+ * gamut('1, 2, 3') // => ['1', '2', '3']
+ * gamut([1, 'a', 3]) // => [1, 'a', 3]
+ * gamut(object) // => [ object ]
+ * gamut(null) // => [ ]
+ */
+function gamut (source) {
+  if (Array.isArray(source)) return source
+  else if (typeof source === 'string') return source.split(SEP)
+  else if (source === null || typeof source === 'undefined') return []
+  else return [ source ]
+}
+
+function parse (i) { return Array.isArray(i) ? i : (asPitch(i) || asInterval(i)) }
+
+/**
+ * Parses a string or a collection of strings into pitch-array notation
+ *
+ * @name parse
+ * @function
+ * @param {String|Array<String>} source - the item or items to be parsed
+ * @return {Array|Array<Array>} the value or values in pitch array notation.
+ * Items can be null but an array will be always be returned.
+ *
+ * @example
+ * gamut.parse('C D') // => [ [0, 0, null], [1, 0, null]]
+ * gamut.parse('1P 2M 3m') // => [ [0, 0, 0], [1, 0, 0], [2, -1, 0] ]
+ */
+gamut.parse = function (source) {
+  return gamut(source).map(parse)
+}
+
+/**
+ * Get the note names of the gamut. Everything is not a note will be null.
+ *
+ * @name notes
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the gamut note names
+ *
+ * @example
+ * gamut.notes('C blah D') // => ['C', null, 'D']
+ */
+gamut.notes = function (source) {
+  return gamut(source).map(function (p) {
+    return asPitch(Array.isArray(p) ? p : parse(p))
+  })
+}
+
+/**
+ * Get the intervals of the gamut. Everything is not an interval will be null.
+ *
+ * @name intervals
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the gamut intervals
+ *
+ * @example
+ * gamut.intervals('1 C#4 3m') // => ['1P', null, '3m']
+ */
+gamut.intervals = function (source) {
+  return gamut(source).map(function (p) {
+    return asInterval(Array.isArray(p) ? p : parse(p))
+  })
+}
+
+/**
+ * Remove the octaves from the notes
+ *
+ * @name pitchClasses
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the pitch classes
+ *
+ * @example
+ * gamut.pitchClasses('C2 D4 E') // => ['C', 'D', 'E']
+ */
+gamut.pitchClasses = function (source) {
+  return gamut.notes(op.pitchClasses(gamut.parse(source)))
+}
+
+/**
+ * Convert all compound intervals to simple intervals
+ *
+ * @name simplify
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the simplified intervals
+ *
+ * @example
+ * gamut.simplify('1P 2M 9m') // => ['1P', '2M', '2m']
+ */
+gamut.simplify = function (source) {
+  return gamut.intervals(op.simplify(gamut.parse(source)))
+}
+
+/**
+ * Get the heights of the notes or intervals. The height of a note is the
+ * distance in semitones from `'C0'` to the note. Applied to intervals,
+ * is the number of semitones
+ *
+ * @name heights
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<Integer>} the heights
+ *
+ * @example
+ * gamut.heights('C0 D0 C1') // => [0, 2, 12]
+ */
+gamut.heights = function (source) {
+  return op.heights(gamut.parse(source))
+}
+
+/**
+ * Transpose a list of notes by an interval
+ *
+ * If the pitch to tranpose is a pitch class (note name without octave),
+ * the transposed pitch will be a pitch class.
+ *
+ * @name transpose
+ * @function
+ * @param {String|Array} interval - the interval to transpose
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<Array>} the transposed notes
+ *
+ * @example
+ * gamut.transpose('M2', 'C D E') // => ['D', 'E', 'F#']
+ * gamut.transpose('M2', 'C2 D3 E2') // => ['D2', 'E3', 'F#2']
+ */
+gamut.transpose = function (interval, source) {
+  var i = parse(interval)
+  return gamut.notes(op.transpose(i, gamut.parse(source)))
+}
+
+/**
+ * Add an interval to a gamut of intervals
+ *
+ * @name transpose
+ * @function
+ * @param {String|Array} interval - the interval to add
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<Array>} the gamut added by the interval
+ *
+ * @example
+ * gamut.add('M2', '1P 2M 3M') // => ['2M', '3M', '4A']
+ */
+gamut.add = function (interval, source) {
+  var i = parse(interval)
+  return gamut.intervals(op.transpose(i, gamut.parse(source)))
+}
+
+/**
+ * Get the distances (in intervals) of the notes from a tonic
+ *
+ * If the tonic is null, the first note of the gamut is asumed to be the tonic
+ *
+ * __Important__: al pitch classes are converted to octave 0 before calculating
+ * the distances.
+ *
+ * @name distances
+ * @function
+ * @param {String|Array} tonic - (Optional) the note to calculate the interval
+ * from. If its null, the first note of the gamut is the tonic
+ * @param {String|Array|Array<Array>} source - the notes
+ * @return {Array<String>} the intervals
+ *
+ * @example
+ * gamut.distance('D2', 'D2 E2 F2') // => ['1P', '2M', '3m']
+ * // pitch classes are octave 0
+ * gamut.distance('C', 'C2') // => ['15P']
+ * gamut.distance('C2', 'C') // => ['-15P']
+ */
+gamut.distances = function (tonic, source) {
+  var t = parse(tonic)
+  if (tonic && !t) return []
+  return gamut.intervals(op.distances(t, gamut.parse(source)))
+}
+
+/**
+ * Remove duplicates __and__ nulls
+ *
+ * @name uniq
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the notes
+ *
+ * @example
+ * gamut.uniq('C D blah E2 E3') // => ['C', 'D', 'E2', 'E3']
+ */
+gamut.uniq = function (source) {
+  return gamut.notes(op.uniq(gamut.parse(source)))
+}
+
+/**
+ * Sort notes in ascending frequency (pitch) order
+ *
+ * @name sortByFreq
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the sorted notes
+ *
+ * @example
+ * gamut.sortByFreq('D E F G C') // => ['C', 'D', E', F', 'G']
+ */
+gamut.sortByFreq = function (source) {
+  return gamut.notes(op.sort(gamut.parse(source)))
+}
+
+/**
+ * Sort intervals by size
+ *
+ * @name sortBySize
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the sorted intervals
+ *
+ * @example
+ * gamut.sortBySize('5 4 3 2 1') // => ['1P', '2M', '3M', '4P', '5P']
+ */
+gamut.sortBySize = function (source) {
+  return gamut.intervals(op.sort(gamut.parse(source)))
+}
+
+/**
+ * Get the interval set of the gamut. An interval set is a group of ascending
+ * simple intervals with no repetitions.
+ *
+ * @name intervalSet
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the intervals
+ *
+ * @example
+ * gamut.intervalSet('1P 2M 3m 8P 9M 10M') // => ['1P', '2M', '3m', '3M']
+ */
+gamut.intervalSet = function (source) {
+  return gamut.intervals(op.intervalSet(gamut.parse(source)))
+}
+
+/**
+ * Get the pitch set of the gamut. A pitch set is a group of note names without
+ * octave and no repretition in ascending order (starting from the first note)
+ *
+ * @name pitchSet
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {Array<String>} the pitch classes (note names without octaves)
+ *
+ * @example
+ * gamut.pitchSet('D4 D5 E6 Eb5 C2') // => ['D', 'Eb', 'E', 'C']
+ */
+gamut.pitchSet = function (source) {
+  return gamut.notes(op.pitchSet(gamut.parse(source)))
+}
+
+/**
+ * Get the binary set number from a collection of notes.
+ *
+ * A binary set number is a 12 digit binary numbers, each digit represent a
+ * note in the chromatic scale. For example '10101100000' means ['C', 'D', 'E', 'F']
+ *
+ * The binary set representation is very useful to compare different sets
+ * (scales, for example)
+ *
+ * @name binarySet
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @return {String} the binary number
+ *
+ * @example
+ * gamut.binarySet('C D E F G A B C') // => '101011010101'
+ */
+gamut.binarySet = function (source) {
+  return op.binarySet(gamut.parse(source))
+}
+
+/**
+ * Get a note set from a binary set number and a (optionally) a tonic.
+ *
+ * This function accepts binary numbers (as strings) or integers. For example,
+ * `2773` identify the major scale.
+ *
+ * @see `binarySet`
+ *
+ * @name fromBinarySet
+ * @function
+ * @param {String|Array|Array<Array>} source - the gamut
+ * @param {String} tonic - (Optional) the first note of the set ('C' by default)
+ * @return {Array<String>} the set pitch classes (note names without octaves)
+ *
+ * @example
+ * gamut.fromBinarySet('101011010101') // => ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+ * gamut.fromBinarySet(2773, 'Bb') // => ['Bb', 'C', 'D', 'Eb', 'F', 'G', 'A']
+ */
+gamut.fromBinarySet = function (source, tonic) {
+  tonic = tonic || [0, 0, 0]
+  return gamut.notes(op.transpose(parse(tonic), op.fromBinarySet(source)))
+}
+
+module.exports = gamut
+
+},{"./operations":12,"interval-parser":6,"pitch-parser":28}],10:[function(require,module,exports){
+arguments[4][4][0].apply(exports,arguments)
+},{"dup":4,"pitch-fifths":11}],11:[function(require,module,exports){
+arguments[4][5][0].apply(exports,arguments)
+},{"dup":5}],12:[function(require,module,exports){
+'use strict'
+
+var op = require('pitch-op')
+
+// pitch to pitch classes
+function pitchClasses (gamut) { return gamut.map(op.pitchClass) }
+
+// simplify interval
+function simplify (gamut) { return gamut.map(op.simplify) }
+
+// return pitch heights: distance from C0 or interval semitones
+function heights (gamut) { return gamut.map(op.semitones) }
+
+function transpose (interval, gamut) {
+  if (!interval) return []
+  return gamut.map(function (p) {
+    return p ? op.add(interval, p) : null
+  })
+}
+
+// get distances from tonic to the rest of the notes
+function distances (tonic, gamut) {
+  if (!tonic) {
+    if (!gamut[0]) return []
+    tonic = gamut[0]
+  }
+  tonic = op.setDefaultOctave(0, tonic)
+  return gamut.map(function (p) {
+    return p ? op.subtract(tonic, op.setDefaultOctave(0, p)) : null
+  })
+}
+
+// remove duplicated notes AND nulls
+function uniq (gamut) {
+  var semitones = heights(gamut)
+  return gamut.reduce(function (uniq, current, currentIndex) {
+    if (current) {
+      var index = semitones.indexOf(semitones[currentIndex])
+      if (index === currentIndex) uniq.push(current)
+    }
+    return uniq
+  }, [])
+}
+
+function sort (gamut) {
+  return gamut.sort(op.comparator())
+}
+
+// get an interval set
+function intervalSet (gamut) {
+  return sort(uniq(simplify(distances(null, gamut))))
+}
+
+// get a pitch set
+function pitchSet (gamut) {
+  return transpose(op.pitchClass(gamut[0]), intervalSet(gamut))
+}
+
+function binarySet (gamut) {
+  var number = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  var semitones = heights(intervalSet(gamut))
+  semitones.forEach(function (s) {
+    number[s] = 1
+  })
+  return number.join('')
+}
+
+// pitch-array of 'C Db D Eb E F F# G Ab A Bb B'
+var NOTES = [
+  [ 0, 0, null ], [ 1, -1, null ], [ 1, 0, null ], [ 2, -1, null ],
+  [ 2, 0, null ], [ 3, 0, null ], [ 3, 1, null ], [ 4, 0, null ],
+  [ 5, -1, null ], [ 5, 0, null ], [ 6, -1, null ], [ 6, 0, null ] ]
+
+function fromBinarySet (number) {
+  if (/^1[01]{11}$/.test(number)) number = parseInt(number, 2)
+  else if (typeof number !== 'number') return []
+
+  var binary = ((number % 2048) + 2048).toString(2)
+  var set = []
+  for (var i = 0; i < 12; i++) {
+    if (binary.charAt(i) === '1') set.push(NOTES[i])
+  }
+  return set
+}
+
+module.exports = {
+  pitchClasses: pitchClasses,
+  simplify: simplify,
+  heights: heights,
+  transpose: transpose,
+  distances: distances,
+  uniq: uniq,
+  sort: sort,
+  intervalSet: intervalSet,
+  pitchSet: pitchSet,
+  binarySet: binarySet,
+  fromBinarySet: fromBinarySet
+}
+
+},{"pitch-op":10}],13:[function(require,module,exports){
+
+var asInterval = require('interval-parser')
+var isArray = Array.isArray
+
+function decorate (fn) {
+  return function (interval) {
+    if (isArray(interval)) return fn(interval)
+    var i = asInterval.parse(interval)
+    return i !== null ? asInterval.build(fn(i)) : null
+  }
+}
+
+var SEMITONES = [0, 2, 4, 5, 7, 9, 11]
+var TYPES = 'PMMPPMM'
+
+/**
+ * Get an inversal string from source or null if not a valid interval
+ */
+function interval (i) {
+  if (typeof i === 'string') return asInterval.build(asInterval.parse(i))
+  else if (isArray(i)) return asInterval.build(i)
+  else return null
+}
+
+/**
+ * Simplify an interval
+ *
+ * @name simplify
+ * @param {String|Array} interval - the interval to be simplified
+ * @return {String|Array} the simplified interval
+ *
+ * @example
+ * simplify('9M') // => '2M'
+ * simplify('-9M') // => '-2M'
+ */
+function simplify (i) {
+  var num = i[0] % 7
+  var oct = 0
+
+  if (num === 0 && i[2] > 0) oct = i[2] > 0 ? 1 : -2
+  else if (i[2] < 0) oct = -1
+
+  return [num, i[1], oct]
+}
+interval.simplify = decorate(simplify)
+
+/**
+ * Get the inversion of an interval. The inversion of an interval is always a
+ * simple interval
+ *
+ * @name invert
+ * @param {String|Array} interval - the interval to be inverted
+ * @return {String|Array} the inverted interval
+ *
+ * @example
+ * invert('3M') // => '6m'
+ */
+function invert (i) {
+  var t = type(i[0])
+  var simple = (6 - i[0]) + 1
+  var alt = t === 'P' ? -i[1] : -(i[1] + 1)
+  var oct = i[2]
+  if (simple === 7) oct += i[2] < 0 ? -1 : 1
+  return simplify([simple, alt, oct])
+}
+interval.invert = decorate(invert)
+
+/**
+ * Get the type of an interval (`'P'` for __perfetable__ and `'M'` for __majorable__)
+ *
+ * It does NOT return the quality of the interval (@see interval/quality)
+ *
+ * @name type
+ * @param {String|Array|Integer} interval - the interval
+ * @return {String} one letter: P or M describing the interval type
+ *
+ * @example
+ * type('4P') // => 'P'
+ * type('5A') // => 'P'
+ * type('3m') // => 'M'
+ * type('2d') // => 'M'
+*/
+function type (interval) {
+  if (!isNaN(interval)) return TYPES[Math.abs(interval) % 7]
+  var i = asInterval.parse(interval)
+  return interval ? type(i[0]) : null
+}
+interval.type = type
+
+/**
+ * Get the [inversion](https://en.wikipedia.org/wiki/Interval_(music)#Inversion)
+ * of an interval.
+ *
+ * Notice that all inverted intervals are simple.
+ *
+ * @param {String|Array} interval - the interval to invert
+ *
+ * @example
+ * invert('M9') // => 'M2'
+ * invert('M-10') // => 'M-3'
+ * invert('P-11', true) // => 'P4'
+ */
+
+ /**
+  * Get the semitones of a interval
+  *
+  * @name semitones
+  * @param {String} interval - the interval to get the semitones number from
+  * @return {Interger} the semitones (can be negative for descending intervals)
+  *
+  * @example
+  * semitones('5P') // => 7
+  * semitones('-5P') // => -7
+  */
+function semitones (interval) {
+  var i = isArray(interval) ? interval : asInterval.parse(interval)
+  if (!i) return null
+  return ((SEMITONES[i[0]] + i[1]) + 12 * i[2])
+}
+interval.semitones = semitones
+
+module.exports = interval
+
+},{"interval-parser":14}],14:[function(require,module,exports){
+'use strict'
+
+var INTERVAL = /^([-+]?)(\d+)(d{1,4}|m|M|P|A{1,4}|b{1,4}|#{1,4}|)$/
+var QALT = {
+  P: { dddd: -4, ddd: -3, dd: -2, d: -1, P: 0, A: 1, AA: 2, AAA: 3, AAAA: 4 },
+  M: { ddd: -4, dd: -3, d: -2, m: -1, M: 0, A: 1, AA: 2, AAA: 3, AAAA: 4 }
+}
+var ALTER = {
+  P: ['dddd', 'ddd', 'dd', 'd', 'P', 'A', 'AA', 'AAA', 'AAAA'],
+  M: ['ddd', 'dd', 'd', 'm', 'M', 'A', 'AA', 'AAA', 'AAAA']
+}
+var TYPES = 'PMMPPMM'
+
+/**
+ * Parses an interval string and returns [a-pitch](https://github.com/danigb/a-pitch) array
+ *
+ * The interval string can be in two different formats:
+ *
+ * - As interval (num + quality): `'1P' '3M' '5P' '13A'` are valid intervals
+ * - As scale degree (alterations + num): `'b2' '#4' 'b9'` are valid intervals
+ *
+ * @param {String} str - the interval string
+ * @return {Array} the a-pitch representation
+ *
+ * @example
+ * var interval = require('interval-parser')
+ * interval.parse('1P') // => [0, 0, 0]
+ * interval.parse('2m') // => [0, -1, 0]
+ * interval.parse('1') // same as interval.parse('1P')
+ * interval.parse('5b') // same as interval.parse('5d')
+ * interval.parse('2b') // same as interval.parse('2m')
+ */
+function parse (str) {
+  var m = INTERVAL.exec(str)
+  if (!m) return null
+  var dir = m[1] === '-' ? -1 : 1
+  var num = +m[2] - 1
+
+  var simple = num % 7
+  var oct = dir * Math.floor(num / 7)
+  var type = TYPES[simple]
+
+  var alt
+  if (m[3] === '') alt = 0
+  else if (m[3][0] === '#') alt = m[3].length
+  else if (m[3][0] === 'b') alt = -m[3].length
+  else {
+    alt = QALT[type][m[3]]
+    if (typeof alt === 'undefined') return null
+  }
+
+  // if descending, invert it and octave lower
+  if (dir === -1) {
+    alt = type === 'P' ? -alt : -(alt + 1)
+    if (simple !== 0) {
+      simple = 7 - simple
+      oct--
+    }
+  }
+  return [simple, alt, oct]
+}
+
+/**
+ * Convert from an [a-pitch](https://github.com/danigb/a-pitch) to an interval string
+ *
+ * @param {Array} interval - the interval [a-pitch](https://github.com/danigb/a-pitch) array
+ * @return {String} the interval string
+ *
+ * @example
+ * var interval = require('interval-parser')
+ * interval.build([1, 0, 0]) // => '2M'
+ */
+function build (i) {
+  if (!i || !Array.isArray(i)) return null
+  var t = TYPES[Math.abs(i[0]) % 7]
+  var n = number(i)
+  var alt = i[1]
+  if (n < 0) alt = t === 'P' ? -alt : -(alt + 1)
+  var q = ALTER[t][4 + alt]
+  if (!q) return null
+  return n + q
+}
+
+function number (i) {
+  var simple = (i[0] % 7) + 1
+  if (i[2] === null) return simple
+  var dir = i[2] < 0 ? -1 : 1
+  var oct = Math.abs(i[2])
+  if (dir < 0) {
+    simple = 9 - simple
+    oct--
+  }
+  return dir * (simple + 7 * oct)
+}
+
+function interval (source) {
+  if (typeof source === 'string') return parse(source)
+  else if (Array.isArray(source)) return build(source)
+  else return null
+}
+interval.parse = parse
+interval.build = build
+
+module.exports = interval
+
+},{}],15:[function(require,module,exports){
+'use strict'
+
+var asPitch = require('pitch-parser')
+
+function asArray (pitch) {
+  return Array.isArray(pitch) ? pitch : asPitch.parse(pitch)
+}
+
+function parseDecorator (fn) {
+  return function (pitch) {
+    var p = asArray(pitch)
+    return p ? fn(p) : null
+  }
+}
+
+// Semitones from C to C D E F G A B
+var SEMITONES = [ 0, 2, 4, 5, 7, 9, 11 ]
+// Chromatic melodic scale
+var CHROMATIC = [ 'C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B' ]
+
+var lib = asArray
+module.exports = lib
+
+/**
+ * Get pitch name in scientific notation
+ *
+ * @param {String|Array} pitch - the pitch string or array
+ * @return {String} the name of the pitch
+ */
+function str (pitch) {
+  var p = Array.isArray(pitch) ? pitch : asPitch.parse(pitch)
+  return p ? asPitch.stringify(p) : null
+}
+lib.str = str
+
+/**
+ * Get letter of the pitch (in uppercase)
+ *
+ * @param {String|Array} pitch - the pitch as string or array
+ * @return {String} the letter of the pitch in uppercase
+ *
+ * @example
+ * pitch.letter('fx') // => 'F'
+ */
+function letter (pitch) {
+  var n = str(pitch)
+  return n ? n.slice(0, 1) : null
+}
+lib.letter = letter
+
+/**
+ * Get the octave of a pitch
+ *
+ */
+function octave (pitch) {
+  return pitch[2]
+}
+lib.octave = parseDecorator(octave)
+
+/**
+ * Get the pitch class (pitch name without octaves) from a pitch
+ *
+ * @param {String} pitch - the pitch to get the pitchClass number from
+ * @return {String} the pitch class
+ *
+ * @example
+ * pitchClass('a4') // => 'A'
+ * pitchClass('ab') // => 'Ab'
+ * pitchClass('cx2') // => 'C##'
+ */
+function pitchClass (p) {
+  if (!p) return null
+  else if (Array.isArray(p)) return [p[0], p[1], null]
+  p = asPitch.parse(p)
+  return p ? asPitch.stringify(pitchClass(p)) : null
+}
+lib.pitchClass = pitchClass
+
+/**
+ * Get the accidentals from a pitch
+ *
+ * @param {String|Array} pitch - the pitch
+ * @return {String} the pitch accidentals
+ *
+ * @example
+ * pitch.accidentals('C##3') // => '##'
+ * pitch.accidentals('Bb4') // => 'b'
+ * pitch.accidentals('E') // => ''
+ */
+function accidentals (p) {
+  var pc = pitchClass(p)
+  return pc ? pc.substring(1) : null
+}
+lib.accidentals = accidentals
+
+/**
+ * Get the pitch of the given midi number
+ *
+ * This method doesn't take into account diatonic spelling. Always the same
+ * pitch class is given to the same midi number.
+ *
+ * @param {Integer} midi - the midi number
+ * @return {String} the pitch
+ *
+ * @example
+ * fromMidi(69) // => 'A4'
+ */
+function fromMidi (midi) {
+  var name = CHROMATIC[midi % 12]
+  var oct = Math.floor(midi / 12) - 1
+  return name + oct
+}
+lib.fromMidi = fromMidi
+
+/**
+ * Get the midi number of a pitch
+ *
+ * @param {String} pitch - the pitch string
+ * @param {Integer} octave - (Optional) the pitch octave (will override the
+ * value from the pitch string)
+ * @return {Integer} the midi number
+ *
+ * @example
+ * toMidi('A4') // => 69
+ * toMidi('A4', 3) // => 57
+ */
+function toMidi (p) {
+  if (!p[2] && p[2] !== 0) return null
+  return SEMITONES[p[0]] + p[1] + 12 * (p[2] + 1)
+}
+lib.toMidi = parseDecorator(toMidi)
+
+/**
+ * Get the pitch of a given frequency.
+ *
+ * It will round the frequency to the nearest pitch frequency. Use `cents` function
+ * if you need to know the difference between the the frequency and the pitch.
+ *
+ * @param {Float} freq - the frequency
+ * @return {String} the pitch
+ *
+ * @see cents
+ *
+ * @example
+ * fromFreq(440) // => 'A4'
+ * fromFreq(443) // => 'A4'
+ * cents(443, 'A4') // => ... to get the difference
+ */
+function fromFreq (freq, tuning) {
+  tuning = tuning || 440
+  var lineal = 12 * ((Math.log(freq) - Math.log(tuning)) / Math.log(2))
+  var midi = Math.round(69 + lineal)
+  return fromMidi(midi)
+}
+lib.fromFreq = fromFreq
+
+// decimal number
+var NUM = /^\d+(?:\.\d+)?$/
+/**
+ * Get the pitch frequency in hertzs
+ *
+ * @param {String} pitch - the pitch
+ * @param {Integer} tuning - optional tuning, 440 by default
+ * @return {Float} - the pitch frequency
+ *
+ * @example
+ * toFreq('A4') // => 440
+ * toFreq('A3', 444) // => 222
+ */
+function toFreq (p, tuning) {
+  if (NUM.test(p)) return +p
+  var midi = toMidi(asPitch.parse(p))
+  if (!midi) return null
+  tuning = tuning || 440
+  return Math.pow(2, (midi - 69) / 12) * tuning
+}
+lib.toFreq = toFreq
+
+/**
+ * Get the distance in cents between pitches or frequencies
+ *
+ * @param {String|Integer} from - first pitch or frequency
+ * @param {String|Integer} to - other pitch or frequency
+ * @param {Integer} decimals - the decimal precision (2 by default)
+ * @return {Integer} the distance in cents
+ *
+ * @example
+ * cents(440, 444) // => 15.66
+ * cents('A4', 444) // => 15.66
+ * cents('A4', 'A#4') // => 100
+ */
+function cents (from, to, decimals) {
+  var dec = decimals ? Math.pow(10, decimals) : 100
+  var fromFq = toFreq(from)
+  var toFq = toFreq(to)
+  return Math.floor(1200 * (Math.log(toFq / fromFq) * dec / Math.log(2))) / dec
+}
+lib.cents = cents
+
+},{"pitch-parser":16}],16:[function(require,module,exports){
+'use strict'
+
+// utility: fill a string with a char
+function fillStr (num, char) { return Array(num + 1).join(char) }
+
+var LETTERS = 'CDEFGAB'
+var REGEX = /^([a-gA-G])(#{1,4}|b{1,4}|x{1,2}|)(\d*)$/
+
+/**
+ * Get a pitch array from a pitch string in scientific notation
+ *
+ * The pitch array of 3 integers is in the form `[letter, accidentals, octave]`
+ *
+ * @param {String} str - the pitch string
+ * @return {Array} the pitch array
+ *
+ * @example
+ * pitch.parse('C2') // => [0, 0, 2]
+ * pitch.parse('C3') // => [0, 0, 3]
+ * pitch.parse('C#3') // => [0, 1, 3]
+ * pitch.parse('Cb3') // => [0, -1, 3]
+ * pitch.parse('D##4') // => [1, 2, 4]
+ * pitch.parse('F#') // => [4, 1, null]
+ */
+function parse (str) {
+  var m = REGEX.exec(str)
+  if (!m) return null
+
+  var step = LETTERS.indexOf(m[1].toUpperCase())
+  var alt = m[2].replace(/x/g, '##').length
+  if (m[2][0] === 'b') alt *= -1
+  var oct = m[3] ? +m[3] : null
+  return [step, alt, oct]
+}
+
+/**
+ * Get a pitch string from a pitch array
+ *
+ * @param {Array} arr - the pitch array
+ * @return {String} the pitch string in scientific notation
+ *
+ * @example
+ * pitch.stringify([2, -1, 3]) // => 'Eb3'
+ * pitch.stringify([5, 2, 2]) // => 'A##2'
+ * pitch.stringify([6, -2, null]) // => 'Bbb'
+ */
+function stringify (arr) {
+  var letter = LETTERS.charAt(Math.abs(arr[0]) % 7)
+  var acc = fillStr(Math.abs(arr[1]), arr[1] < 0 ? 'b' : '#')
+  var oct = arr[2] || arr[2] === 0 ? arr[2] : ''
+  return letter + acc + oct
+}
+
+module.exports = { parse: parse, stringify: stringify }
+
+},{}],17:[function(require,module,exports){
+module.exports={
+  "dominant": "mixolydian",
+  "super locrian": "altered",
+  "diminished whole tone": "altered",
+  "arabian": "locrian major",
+  "ionian": "major",
+  "minor": "aeolian",
+  "pomeroy": "altered",
+  "pentatonic": "major pentatonic",
+  "minor seven flat five pentatonic": "locrian pentatonic",
+  "chinese": "lydian pentatonic",
+  "kumoi": "flat three pentatonic",
+  "blues": "minor blues",
+  "gypsy": "double harmonic major",
+  "hindu": "melodic minor fifth mode",
+  "indian": "mixolydian pentatonic",
+  "dorian b2": "neopolitan major",
+  "lydian b7": "lydian dominant",
+  "mixolydian b6": "melodic minor fifth mode",
+  "phrygian major": "spanish"
+}
+
+},{}],18:[function(require,module,exports){
+module.exports={
+  "lydian": "1 2 3 4# 5 6 7",
+  "major": "1 2 3 4 5 6 7",
+  "mixolydian": "1 2 3 4 5 6 7b",
+  "dorian": "1 2 3b 4 5 6 7b",
+  "aeolian": "1 2 3b 4 5 6b 7b",
+  "phrygian": "1 2b 3b 4 5 6b 7b",
+  "locrian": "1 2b 3b 4 5b 6b 7b",
+  "melodic minor": "1 2 3b 4 5 6 7",
+  "melodic minor second mode": "1 2b 3b 4 5 6 7b",
+  "lydian augmented": "1 2 3 4# 5A 6 7",
+  "lydian dominant": "1 2 3 4# 5 6 7b",
+  "melodic minor fifth mode": "1 2 3 4 5 6b 7b",
+  "locrian #2": "1 2 3b 4 5b 6b 7b",
+  "locrian major": "1 2 3 4 5b 6b 7b",
+  "altered": "1 2b 3b 3 5b 6b 7b",
+  "major pentatonic": "1 2 3 5 6",
+  "lydian pentatonic": "1 3 4# 5 7",
+  "mixolydian pentatonic": "1 3 4 5 7b",
+  "locrian pentatonic": "1 3b 4 5b 7b",
+  "minor pentatonic": "1 3b 4 5 7b",
+  "minor six pentatonic": "1 3b 4 5 6",
+  "minor hexatonic": "1 2 3b 4 5 7",
+  "flat three pentatonic": "1 2 3b 5 6",
+  "flat six pentatonic": "1 2 3 5 6b",
+  "major flat two pentatonic": "1 2b 3 5 6",
+  "whole tone pentatonic": "1 3 5b 6b 7b",
+  "ionian pentatonic": "1 3 4 5 7",
+  "lydian #5 pentatonic": "1 3 4# 5A 7",
+  "lydian dominant pentatonic": "1 3 4# 5 7b",
+  "minor #7 pentatonic": "1 3b 4 5 7",
+  "super locrian pentatonic": "1 3b 4d 5b 7b",
+  "in-sen": "1 2b 4 5 7b",
+  "iwato": "1 2b 4 5b 7b",
+  "hirajoshi": "1 2 3b 5 6b",
+  "kumoijoshi": "1 2b 4 5 6b",
+  "pelog": "1 2b 3b 5 6b",
+  "vietnamese 1": "1 3b 4 5 6b",
+  "vietnamese 2": "1 3b 4 5 7b",
+  "prometheus": "1 2 3 4# 6 7b",
+  "prometheus neopolitan": "1 2b 3 4# 6 7b",
+  "ritusen": "1 2 4 5 6",
+  "scriabin": "1 2b 3 5 6",
+  "piongio": "1 2 4 5 6 7b",
+  "major blues": "1 2 3b 3 5 6",
+  "minor blues": "1 3b 4 5b 5 7b",
+  "composite blues": "1 2 3b 3 4 5b 5 6 7b",
+  "augmented": "1 2A 3 5 5A 7",
+  "augmented heptatonic": "1 2A 3 4 5 5A 7",
+  "dorian #4": "1 2 3b 4# 5 6 7b",
+  "lydian diminished": "1 2 3b 4# 5 6 7",
+  "whole tone": "1 2 3 4# 5A 7b",
+  "leading whole tone": "1 2 3 4# 5A 7b 7",
+  "harmonic minor": "1 2 3b 4 5 6b 7",
+  "lydian minor": "1 2 3 4# 5 6b 7b",
+  "neopolitan": "1 2b 3b 4 5 6b 7",
+  "neopolitan minor": "1 2b 3b 4 5 6b 7b",
+  "neopolitan major": "1 2b 3b 4 5 6 7",
+  "neopolitan major pentatonic": "1 3 4 5b 7b",
+  "romanian minor": "1 2 3b 5b 5 6 7b",
+  "double harmonic lydian": "1 2b 3 4# 5 6b 7",
+  "diminished": "1 2 3b 4 5b 6b 6 7",
+  "harmonic major": "1 2 3 4 5 6b 7",
+  "double harmonic major": "1 2b 3 4 5 6b 7",
+  "egyptian": "1 2 4 5 7b",
+  "hungarian minor": "1 2 3b 4# 5 6b 7",
+  "hungarian major": "1 2A 3 4# 5 6 7b",
+  "oriental": "1 2b 3 4 5b 6 7b",
+  "spanish": "1 2b 3 4 5 6b 7b",
+  "spanish heptatonic": "1 2b 3b 3 4 5 6b 7b",
+  "flamenco": "1 2b 3b 3 4# 5 7b",
+  "balinese": "1 2b 3b 4 5 6b 7",
+  "todi raga": "1 2b 3b 4# 5 6b 7",
+  "malkos raga": "1 3b 4 6b 7b",
+  "kafi raga": "1 3b 3 4 5 6 7b 7",
+  "purvi raga": "1 2b 3 4 4# 5 6b 7",
+  "persian": "1 2b 3 4 5b 6b 7",
+  "bebop": "1 2 3 4 5 6 7b 7",
+  "bebop dominant": "1 2 3 4 5 6 7b 7",
+  "bebop minor": "1 2 3b 3 4 5 6 7b",
+  "bebop major": "1 2 3 4 5 5A 6 7",
+  "bebop locrian": "1 2b 3b 4 5b 5 6b 7b",
+  "minor bebop": "1 2 3b 4 5 6b 7b 7",
+  "mystery #1": "1 2b 3 5b 6b 7b",
+  "enigmatic": "1 2b 3 5b 6b 7b 7",
+  "minor six diminished": "1 2 3b 4 5 6b 6 7",
+  "ionian augmented": "1 2 3 4 5A 6 7",
+  "lydian #9": "1 2b 3 4# 5 6 7",
+  "ichikosucho": "1 2 3 4 5b 5 6 7",
+  "six tone symmetric": "1 2b 3 4 5A 6"
+}
+
+},{}],19:[function(require,module,exports){
+'use strict'
+
+var curry = require('curry')
+var gamut = require('music-gamut')
+var scale = require('./scale')
+
+function mapValues (hash, fn) {
+  return Object.keys(hash).reduce(function (data, name) {
+    data[name] = fn(hash[name])
+    return data
+  }, {})
+}
+
+/**
+ * Create a scale builder function from a hash of data
+ *
+ * A scale builder is a function that given a names and a tonic, returns
+ * a scale (array). It can be partially applied.
+ *
+ * @name dictionary
+ * @function
+ * @param {Hash} data - the data (maps names to intervals or notes)
+ * @param {Hash} aliases - (Optional) maps names to names in the data hash
+ * @return {Function} a function to create scales
+ *
+ * @example
+ * var scales = dictionary({ major: '1 2 3 4 5 6 7', minor: '1 2 3b 4 5 6b 7b' }, {eolian: 'minor'})
+ * scales('major', 'C') // => ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+ * scales('aeolian', 'A') // => ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+ * var minor = scales('minor')
+ * minor('D') // => ['D', 'E', 'F', 'G', 'A', 'Bb', 'C']
+ */
+module.exports = function (hash, alias) {
+  var data = mapValues(hash, function (src) {
+    return gamut.set(src)
+  })
+  alias = alias || {}
+
+  return curry(function (name, tonic) {
+    var intervals = data[name] || data[alias[name]]
+    return scale(intervals, tonic)
+  })
+}
+
+},{"./scale":27,"curry":23,"music-gamut":24}],20:[function(require,module,exports){
+var scales = require('./dict/scales.json')
+var aliases = require('./dict/aliases.json')
+var dictionary = require('./dictionary')
+
+/**
+ * Build a scale using a name and a tonic
+ *
+ * It uses a dictionary of scales (see dict directory)
+ *
+ * Can be partially applied (see example)
+ *
+ * @name fromName
+ * @function
+ * @param {String} name - the name of the scale
+ * @param {String|Array} tonic - the tonic of the scale
+ *
+ * @example
+ * scale.fromName('bebop locrian', 'C') // => [ 'C', 'Db', 'Eb', 'F', 'Gb', 'G', 'Ab', 'Bb' ]
+ * var kumoi = scale.fromName('kumoi')
+ * kumoi('G') // => ['G', 'A', 'Bb', 'D', 'E']
+ */
+module.exports = dictionary(scales, aliases)
+
+},{"./dict/aliases.json":17,"./dict/scales.json":18,"./dictionary":19}],21:[function(require,module,exports){
+'use strict'
+
+var scale = require('./scale')
+scale.dictionary = require('./dictionary')
+scale.fromName = require('./fromName')
+scale.names = require('./names')
+
+module.exports = scale
+
+},{"./dictionary":19,"./fromName":20,"./names":22,"./scale":27}],22:[function(require,module,exports){
+'use strict'
+
+var scales = require('./dict/scales.json')
+var aliases = require('./dict/aliases.json')
+
+/**
+ * Get all scale names available
+ *
+ * @name names
+ * @function
+ * @param {Boolean} withAliases - set to `true` to get aliases names
+ * @return {Array<String>} the list of all scale names
+ *
+ * @example
+ * scale.names() // => ['major', 'minor', ...]
+ */
+module.exports = function (withAliases) {
+  var names = Object.keys(scales)
+  return withAliases ? names.concat(Object.keys(aliases)) : names
+}
+
+},{"./dict/aliases.json":17,"./dict/scales.json":18}],23:[function(require,module,exports){
+arguments[4][8][0].apply(exports,arguments)
+},{"dup":8}],24:[function(require,module,exports){
+'use strict'
+
+var asPitch = require('pitch-parser')
+var asInterval = require('interval-parser')
+var op = require('pitch-op')
+
+var toNotes = map(function (p) { return typeof p === 'string' ? p : asPitch(p) })
+var toIntervals = map(function (i) { return typeof i === 'string' ? i : asInterval(i) })
+function asPitchArray (i) { return isArray(i) ? i : (asPitch(i) || asInterval(i)) }
+
+// separator pattern to convert a list string to an array
+var SEP = /\s*\|\s*|\s*,\s*|\s+/
+var isArray = Array.isArray
+
+// not documented because I don't know what to do
+function gamut (operations, source) {
+  return gamut.parse(source)
+}
+
+/**
+ * Compose functions
+ *
+ * @name fn
+ * @function
+ * @param {Array<Function>} operation - an array of functions to compoase
+ * @return {Function} the composed function
+ */
+gamut.fn = function (operations) {
+  var ops = operations.reverse()
+  var len = ops.length
+  return function (value) {
+    var arr = gamut.asArray(value)
+    for (var i = 0; i < len; i++) {
+      arr = ops[i].call(null, arr)
+    }
+    return arr
+  }
+}
+
+/**
+ * Get an array from a source. The source can be a string separated by
+ * spaces, commas or bars (`|`), an array or an object.
+ *
+ * This function does not perform any transformation to the items of the array.
+ * This function __always__ return an array, even if its empty
+ *
+ * @name asArray
+ * @function
+ * @param {String|Array|Object} source - the source
+ * @return {Array} the source converted to an array
+ *
+ * @example
+ * gamut.asArray('c d e') // => [ 'c', 'd', 'e' ]
+ * gamut.asArray('CMaj7 | Dm7 G7') // => [ 'CMaj7', 'Dm7', 'G7' ]
+ * gamut.asArray('1, 2, 3') // => ['1', '2', '3']
+ * gamut.asArray([1, 'a', 3]) // => [1, 'a', 3]
+ * gamut.asArray(object) // => [ object ]
+ * gamut.asArray(null) // => [ ]
+ */
+gamut.asArray = function (source) {
+  if (isArray(source)) return source
+  else if (typeof source === 'string') return source.split(SEP)
+  else if (source === null || typeof source === 'undefined') return []
+  else return [ source ]
+}
+
+/**
+ * Get a gamut mapped to a function
+ *
+ * Is important to notice that the function will receive pitches in pitch-array notation format.
+ *
+ * This function can be partially applied (Function -> Array -> Array)
+ *
+ * @name map
+ * @function
+ * @param {Function} fn - the function to map the gamut with
+ * @param {String|Array} source - the gamut
+ * @return {Array} the mapped gamut
+ *
+ * @example
+ * var addOctave = function(p) { return [p[0], p[1], p[2] + 1]}
+ * gamut.map(addOctave, [ [0, 0, 0], [1, 0, 0] ]) // => [ [0, 0, 1], [1, 0, 1]]
+ * var octaveUp = gamut.map(addOctave)
+ * octaveUp([ [0, 0, 0], [1, 0, 0] ]) // => [ [0, 0, 1], [1, 0, 1]]
+ */
+function map (fn, src) {
+  if (arguments.length > 1) return map(fn)(src)
+  return function (src) { return gamut.asArray(src).map(fn) }
+}
+gamut.map = map
+
+/**
+ * Convert a list of notes or intervals to pitch-array notation format
+ *
+ * @name parse
+ * @function
+ * @param {String|Array} source - the gamut
+ * @return {Array} the gamut with notes or intervals in pitch-array notation format
+ *
+ * @example
+ * gamut.parse('C D E') // => [ [0, 0, null], [1, 0, null], [2, 0, null] ]
+ * gamut.parse('1P 3M 5P') // => [ [0, 0, 0], [2, 0, 0], [4, 0, 0] ]
+ */
+function parse (source) { return gamut.asArray(source).map(asPitchArray) }
+gamut.parse = parse
+
+function decorate (builder, parser, fn) {
+  return function () {
+    var len = arguments.length
+    if (len === 0) return []
+    var args = Array.prototype.slice.call(arguments)
+    args[len - 1] = parser(args[len - 1])
+    return builder(fn.apply(null, args))
+  }
+}
+
+/**
+ * Get notes from a gamut, or decorate a function to return notes
+ *
+ * @name asNotes
+ * @function
+ * @param {Array<Array>|Function} source
+ * @return {Array<String>|Function} an array of strings with note names or a function
+ * decorated to return an array of pitch strings
+ *
+ * @example
+ * gamut.asNotes('1P 2M 3M') // => ['C0', 'D0', 'E0']
+ * var transpose = gamut.asNotes(gamut.add)
+ * transpose('2M', 'C D E') // => [ 'D', 'E', 'F#' ]
+ */
+gamut.asNotes = function (src) {
+  return typeof src === 'function' ? decorate(toNotes, parse, src) : toNotes(parse(src))
+}
+
+/**
+ * Get the gamut as intervals or decorate a function to return intervals
+ *
+ * @name asIntervals
+ * @function
+ * @param {Array<Array>|Function} source
+ * @return {Array<String>|Function} an array of strings with note names or a function
+ * decorated to return an array of pitch strings
+ *
+ * @example
+ * gamut.asIntervals('C D E') // => []
+ * var addIntervals = gamut.asIntervals(gamut.add)
+ * addIntervals('2M', '1P 5P') // => ['2M', '6M']
+ */
+gamut.asIntervals = function (src) {
+  return typeof src === 'function' ? decorate(toIntervals, parse, src) : toIntervals(parse(src))
+}
+
+/**
+ * Get the pitch classes of a gamut
+ *
+ */
+function pitchClass (src) {
+  var toPitchClasses = map(op.pitchClass)
+  if (typeof src !== 'function') return toNotes(toPitchClasses(parse(src)))
+}
+gamut.pitchClass = pitchClass
+
+/**
+ * Add interval to a gamut
+ *
+ * Like all the functions from gamut, this works with pitch-array notation format arrays.
+ * Probably you will want to decorate this function with `gamut.notes` or
+ * `gamut.intervals` (see example)
+ *
+ * @name add
+ * @param {String} interval - the interval to add
+ * @param {String|Array} source - the gamut
+ * @return {Array} the gamut added an interval
+ *
+ * @example
+ * gamut.add([1, 0, 0], [ [1, 0, 0], [2, 0, 0]]) // => [ [2, 0, 0], [3, 1, 0] ]
+ * var transpose = gamut.asNotes(gamut.add)
+ * transpose('2M', 'C D E') // => [ 'D', 'E', 'F#' ]
+ * var addIntervals = gamut.intevals(gamut.add)
+ * addIntervals('2M', '1P 2M 3M') // => [ '2M', '3M', '4A' ]
+ */
+function add (interval, source) {
+  var i = asPitchArray(interval)
+  if (!i) return parse(source)
+  return source.map(function (pitch) {
+    return pitch ? op.add(pitch, i) : null
+  })
+}
+gamut.add = add
+
+// all intervals relative to tonic
+function normalize (tonic, arr) {
+  return arr.map(function (i) { return i ? op.subtract(tonic, i) : null })
+}
+
+/**
+ * Get the harmonics (the intervals of the notes relative to the first one)
+ *
+ * @name harmonics
+ * @function
+ * @param {String|Array<Array>} source - the gamut
+ * @return {Array<Array>} the gamut harmonics
+ *
+ * @example
+ * var harmonics = gamut.asIntervals(gamut.harmonics)
+ * harmonics('D F# A') // => ['1P', '3M', '5P']
+ */
+gamut.harmonics = function (src) {
+  var parsed = parse(src).map(op.setDefaultOctave(0))
+  return normalize(parsed[0], parsed)
+}
+
+/**
+ * Remove duplicates from a gamut
+ *
+ * @name uniq
+ * @function
+ * @param {String|Array<Array>} source - the gamut
+ * @return {Array<Array>} the gamut without duplicates
+ */
+gamut.uniq = function (source) {
+  source = parse(source)
+  var semitones = source.map(op.semitones)
+  return source.reduce(function (uniq, current, currentIndex) {
+    var index = semitones.indexOf(op.semitones(current))
+    if (index === currentIndex) uniq.push(current)
+    return uniq
+  }, [])
+}
+
+/**
+ * Get a pitch or interval set.
+ *
+ * @name set
+ * @function
+ * @param {String|Array<Array>} source - the gamut
+ * @return {Array<Array>} the pitch set
+ */
+gamut.set = function (source) {
+  var simplify = map(op.simplify)
+  var parsed = parse(source)
+  var first = parsed[0] ? op.pitchClass(parsed[0]) : null
+  return gamut.uniq(gamut.sort(simplify(normalize(first, parsed))))
+}
+
+/**
+ * Sort a gamut by pitch height (frequency)
+ *
+ * Notice that this functions __doesn't__ mutate the original gamut.
+ *
+ * @name sort
+ * @function
+ * @param {String|Array<Array>} source - the gamut
+ * @return {Array<Array>} the sorted gamut
+ */
+gamut.sort = function (source) {
+  return parse(source).sort(op.comparator())
+}
+
+module.exports = gamut
+
+},{"interval-parser":6,"pitch-op":25,"pitch-parser":28}],25:[function(require,module,exports){
+arguments[4][4][0].apply(exports,arguments)
+},{"dup":4,"pitch-fifths":26}],26:[function(require,module,exports){
+arguments[4][5][0].apply(exports,arguments)
+},{"dup":5}],27:[function(require,module,exports){
+'use strict'
+
+var curry = require('curry')
+var gamut = require('music-gamut')
+var transpose = gamut.asNotes(gamut.add)
+
+/**
+ * Build a scale from a source and a tonic. A scale is an array of notes (or
+ * intervals if tonic is null) ordered by frequency
+ *
+ * A source can be a list of intervals or notes. The tonic must be
+ * a pitch (with or without octave) or null to get the scale intervals
+ *
+ * This function is currified, so you can partially apply the function passing
+ * one parameter instead of two (see example)
+ *
+ * @param {Array} source - the list of intervals or notes
+ * @param {String} tonic - the tonic of the scale
+ * @return {Array} the list of notes
+ *
+ * @example
+ * scale('1 2 3 5 6', 'G') // => ['G', 'A', 'B', 'D', 'E']
+ * var dorian = scale('D E F G A B C')
+ * dorian('C4')
+ */
+function scale (src, tonic) {
+  var intervals = gamut.set(src)
+  return tonic ? transpose(tonic, intervals) : gamut.asIntervals(intervals)
+}
+
+module.exports = curry(scale)
+
+},{"curry":23,"music-gamut":24}],28:[function(require,module,exports){
+'use strict'
+
+// utility: fill a string with a char
+function fillStr (num, char) { return Array(num + 1).join(char) }
+
+var LETTERS = 'CDEFGAB'
+var REGEX = /^([a-gA-G])(#{1,4}|b{1,4}|x{1,2}|)(\d*)$/
+
+var cache = {}
+
+/**
+ * Converts pitches between strings and [array notation](https://github.com/danigb/a-pitch)
+ *
+ * This functions parses a string in the form `'letter + accidentals [+ octave]'`.
+ * The letter can be upper or down case and the accidentals can be sharps `#`
+ * flats `b` or double sharps `x`.
+ *
+ * The pitch array notation is 3 integers is in the form `[letter, accidentals, octave]`.
+ *
+ * This function caches the result to get better performance. If for some
+ * reason you don't want to cache, use `pitch.parse` and `pitch.build`
+ *
+ * @param {String|Array} val - the pitch (can be a string or array)
+ * @return {Array|String} the converted val (string if it was an array,
+ * and array if it was string)
+ *
+ * @example
+ * var pitch = require('pitch-parser')
+ * pitch('C4') // => [0, 0, 4]
+ * pitch([0, 0, 4]) // => 'C4'
+ *
+ * @example // parse
+ * pitch('c2') // => [0, 0, 2]
+ * pitch('F#') // => [4, 1, null] (no octave)
+ *
+ * @example // build
+ * pitch([2, -1, 3]) // => 'Eb3'
+ * pitch([6, -2, null]) // => 'Bbb'
+ *
+ * @example // return scientific notation
+ * pitch(pitch('cbb')) // => 'Cbb'
+ * pitch(pitch('fx')) // => 'F##'
+ */
+function pitch (val) {
+  if (Array.isArray(val)) {
+    var str = '|' + val[0] + '|' + val[1] + '|' + val[2]
+    return str in cache ? cache[str] : cache[str] = pitch.build(val)
+  } else {
+    return val in cache ? cache[val] : cache[val] = pitch.parse(val)
+  }
+}
+
+/**
+ * Get a pitch array from a pitch string in scientific notation
+ *
+ * The pitch array of 3 integers is in the form `[letter, accidentals, octave]`
+ *
+ * This function is non cached. Prefer `pitch` where possible.
+ *
+ * @param {String} str - the pitch string
+ * @return {Array} the pitch array
+ *
+ * @example
+ * pitch.parse('C2') // => [0, 0, 2]
+ * pitch.parse('C3') // => [0, 0, 3]
+ * pitch.parse('C#3') // => [0, 1, 3]
+ * pitch.parse('Cb3') // => [0, -1, 3]
+ * pitch.parse('D##4') // => [1, 2, 4]
+ * pitch.parse('F#') // => [4, 1, null]
+ */
+pitch.parse = function (str) {
+  var m = REGEX.exec(str)
+  if (!m) return null
+
+  var step = LETTERS.indexOf(m[1].toUpperCase())
+  var alt = m[2].replace(/x/g, '##').length
+  if (m[2][0] === 'b') alt *= -1
+  var oct = m[3] ? +m[3] : null
+  return [step, alt, oct]
+}
+
+/**
+ * Get a pitch string from a pitch array
+ *
+ * This function is non cached. Prefer `pitch` where possible.
+ *
+ * @name pitch.build
+ * @param {Array} arr - the pitch array
+ * @return {String} the pitch string in scientific notation
+ *
+ * @example
+ * pitch.build([2, -1, 3]) // => 'Eb3'
+ * pitch.build([5, 2, 2]) // => 'A##2'
+ * pitch.build([6, -2, null]) // => 'Bbb'
+ */
+pitch.build = function (arr) {
+  if (!arr || arr.length < 2) return null
+  var letter = LETTERS.charAt(Math.abs(arr[0]) % 7)
+  var acc = fillStr(Math.abs(arr[1]), arr[1] < 0 ? 'b' : '#')
+  var oct = arr[2] || arr[2] === 0 ? arr[2] : ''
+  return letter + acc + oct
+}
+
+module.exports = pitch
+
+},{}],29:[function(require,module,exports){
+arguments[4][3][0].apply(exports,arguments)
+},{"dup":3,"interval-parser":6,"pitch-op":30,"pitch-parser":28}],30:[function(require,module,exports){
+arguments[4][4][0].apply(exports,arguments)
+},{"dup":4,"pitch-fifths":31}],31:[function(require,module,exports){
+arguments[4][5][0].apply(exports,arguments)
+},{"dup":5}]},{},[1]);
